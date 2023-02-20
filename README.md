@@ -1,0 +1,2 @@
+# FFMarkowitz
+FinFal Markowitz solver
