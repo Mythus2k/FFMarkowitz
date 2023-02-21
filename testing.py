@@ -1,6 +1,7 @@
 from yfinance import download as yfdown
 from pandas import read_csv, DataFrame, Timestamp
 from pickle import load, dump
+from sklearn.linear_model import LinearRegression
 
 def now():
     "Returns pandas.Timestamp.now('US/Eastern')"
@@ -14,37 +15,36 @@ class Ticker_Deamon:
             'ticker': list(), 
             'beta': list(), 
             'std': list(), 
-            'last_update': list(),
-            'period': list(),
-            'interval': list()})            
+            'last_update': list()})            
         self.tickers.to_csv('tickers.csv',index=False)
 
-        # create index
+        # Parameters
         self.period = '10y'
         self.interval = '1mo'
+        self.ohcl = 'Close'
         
+        # create index
         self.index = {
             'ticker' : 'vti', 
             'data' : yfdown('vti',period=self.period,interval=self.interval),
             'date' : now()}
         
 
+    # Reload tickers
+    def reload_ticks(self):
+        self.tickers = read_csv('./tickers.csv')
+
     # Add tickers
     def add_tick(self, tick):
-        new_tick = {
+        calc = self.calc(tick)
+
+        self.tickers += {
             'ticker': tick,
-            'beta': None,
-            'std': None,
-            'last_update': now(),
-            'period': None,
-            'interval': None}
+            'beta': calc[0],
+            'std': calc[1],
+            'last_update': now()}
         
-        data = yfdown(tick,period=self.period,interval=self.interval)
-
-
-        self.tickers += new_tick
-        
-        return tick
+        return 
 
     # remove tickers
     def del_tick(self, tick):
@@ -64,12 +64,12 @@ class Ticker_Deamon:
 
     # calculate points
     def calc(self, tick):
-        beta = float()
-        std = float()
-        date = str()
-        pick = None
+        data = yfdown(tick, period=self.period, interval=self.interval)
+        
+        std = data[self.ohcl].std()
+        beta = LinearRegression().fit(self.index['data'][[self.ohcl]],data[[self.ohcl]]).coef_[0][0]
 
-        return beta, std, date, pick
+        return (std, beta)
 
     def set_index(self, tick):
         self.index['ticker'] = tick
@@ -92,6 +92,15 @@ class Ticker_Deamon:
         """
         self.interval = interval
 
+    def set_ohcl(self, ohcl):
+        '''
+        Must be:
+            Open, High, Low, Close, Adj Close
+        '''
+        self.ohcl = ohcl
+
+    def solve_beta(self, tick):
+        return 
 
 class Markowitz_Deamon:
     pass
@@ -112,4 +121,4 @@ class Markowitz_Deamon:
     # any additional limits!
 
 if __name__ == '__main__':
-    print(now())
+    pass
