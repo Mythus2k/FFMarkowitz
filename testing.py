@@ -121,4 +121,5 @@ class Markowitz_Deamon:
     # any additional limits!
 
 if __name__ == '__main__':
-    pass
+    data = yfdown('spy',start='2010-01-01',end='2020-12-31',period='10y',interval='1mo')
+    print(data)
