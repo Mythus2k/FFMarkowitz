@@ -10,13 +10,14 @@ def now():
 class Ticker_Deamon:
     # initalize
     def __init__(self):
-        # create DataFrame
+        # create tickers list
         self.tickers = DataFrame({
-            'ticker': list(), 
-            'beta': list(), 
-            'std': list(), 
-            'last_update': list()})            
-        self.tickers.to_csv('tickers.csv',index=False)
+            'ticker': list(),
+            'std': list(),
+            'beta': list(),
+            'last_update': list()
+        })       
+        self.dump_tickers()
 
         # Parameters
         self.period = '10y'
@@ -24,57 +25,69 @@ class Ticker_Deamon:
         self.ohcl = 'Close'
         
         # create index
-        self.index = {
-            'ticker' : 'vti', 
-            'data' : yfdown('vti',period=self.period,interval=self.interval),
-            'date' : now()}
+        self.index = dict()
+        self.set_index('vti')
         
-
-    # Reload tickers
     def reload_ticks(self):
         self.tickers = read_csv('./tickers.csv')
+        return
 
-    # Add tickers
+    def recalc_ticks(self):
+        ticks = self.tickers['ticker'].to_list()
+        for tick in ticks:
+            self.del_tick(tick)
+            self.add_tick(tick)
+        
+        return
+
+    def dump_tickers(self):
+        self.tickers.to_csv('./tickers.csv',index=False)
+        return
+
     def add_tick(self, tick):
         calc = self.calc(tick)
 
-        self.tickers += {
-            'ticker': tick,
-            'beta': calc[0],
-            'std': calc[1],
-            'last_update': now()}
+        self.tickers.loc[-1] = {'ticker':tick,'std':calc[0],'beta':calc[1],'last_update':now()}
+        self.tickers.index = self.tickers.index + 1
+        self.tickers.reset_index()
+        self.dump_tickers()
         
         return 
 
-    # remove tickers
     def del_tick(self, tick):
-        pass
+        self.tickers = self.tickers.drop(self.tickers.loc[self.tickers['ticker'] == tick].index[0])
+        self.dump_tickers()
 
-    # update data
+        return
+
     def update_tick(self, tick):
         pass
 
-    # truncate data
     def truncate_data(self, tick, length):
         pass
 
-    # set data history
-    def set_dataLen(self, tick, length):
-        pass
-
-    # calculate points
     def calc(self, tick):
-        data = yfdown(tick, period=self.period, interval=self.interval)
-        
-        std = data[self.ohcl].std()
-        beta = LinearRegression().fit(self.index['data'][[self.ohcl]],data[[self.ohcl]]).coef_[0][0]
+        bdata = DataFrame()
+        data = yfdown(tick, period=self.period, interval=self.interval)[[self.ohcl]].dropna()
+
+        bdata['y'] = data.pct_change().dropna()
+        bdata['x'] = self.index['data'].pct_change().dropna()
+
+        bdata = bdata.dropna()
+
+        std = bdata['y'].std()
+        beta = LinearRegression().fit(bdata[['x']],bdata[['y']]).coef_[0][0]
 
         return (std, beta)
 
     def set_index(self, tick):
         self.index['ticker'] = tick
-        self.index['data'] = yfdown(tick,period=self.period,interval=self.interval)
+        self.index['data'] = yfdown(tick,period=self.period,interval=self.interval)[[self.ohcl]].dropna()
         self.index['date'] = now()
+
+        self.recalc_ticks()
+
+        return 
 
     def set_period(self, period):
         """
@@ -99,20 +112,24 @@ class Ticker_Deamon:
         '''
         self.ohcl = ohcl
 
-    def solve_beta(self, tick):
-        return 
+    def dump_tickDeamon(self):
+        dump(self,open('./Conf/TickerDeamon.conf','wb'))
+
 
 class Markowitz_Deamon:
-    pass
-    # read ticker data
-
-    # set index
-
+    def __init__(self) -> None:
+        self.td = Ticker_Deamon()
+        self.rf = float()
+        self.rf = self.set_riskFree()
+    
     # set risk free
-
-    # call risk free
+    def set_riskFree(self,rate=None):
+        if rate == None:
+            print('go out and find riskfree from treasury site')
+        self.rf = rate
 
     # set market return
+    
 
     # return covariance
 
@@ -121,4 +138,8 @@ class Markowitz_Deamon:
     # any additional limits!
 
 if __name__ == '__main__':
-    pass
+    md = Markowitz_Deamon()
+
+    print(md.td.tickers)
+    
+
