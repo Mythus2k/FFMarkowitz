@@ -49,7 +49,7 @@ class Ticker_Deamon:
 
         self.tickers.loc[-1] = {'ticker':tick,'std':calc[0],'beta':calc[1],'last_update':now()}
         self.tickers.index = self.tickers.index + 1
-        self.tickers.reset_index()
+        self.tickers.reset_index(inplace=True, drop = True)
         self.dump_tickers()
         
         return 
@@ -83,6 +83,7 @@ class Ticker_Deamon:
     def set_index(self, tick):
         self.index['ticker'] = tick
         self.index['data'] = yfdown(tick,period=self.period,interval=self.interval)[[self.ohcl]].dropna()
+        self.index['std'] = self.index['data'].pct_change().dropna()[self.ohcl].std()
         self.index['date'] = now()
 
         self.recalc_ticks()
@@ -120,26 +121,58 @@ class Markowitz_Deamon:
     def __init__(self) -> None:
         self.td = Ticker_Deamon()
         self.rf = float()
-        self.rf = self.set_riskFree()
+        self.mr = float()
+        self.set_riskFree(.04) # need to remove from .04 to
+        self.set_marketReturn(.08)
+
+        self.mMatrix = DataFrame()
     
-    # set risk free
+    # Needs work inside
     def set_riskFree(self,rate=None):
         if rate == None:
+            # Devolpe call from treasury website to pull relevant RF ratge
             print('go out and find riskfree from treasury site')
+            # rate = n_rate
         self.rf = rate
 
-    # set market return
+    # Needs work inside
+    def set_marketReturn(self, marketReturn = None):
+        if marketReturn == None:
+            # need to add code to create a PY // avg market return
+            print('Go out and find market return')
+        self.mr = marketReturn
     
+    # def 
 
     # return covariance
-
+    
     # risk aversion
+
+    # shorting?
 
     # any additional limits!
 
 if __name__ == '__main__':
     md = Markowitz_Deamon()
+    md.td.add_tick('bac')
+    md.td.add_tick('tsla')
+    md.td.add_tick('v')
+    md.td.add_tick('xom')
 
     print(md.td.tickers)
+    
+    mvar = md.td.index['std']**2
+    print(mvar)
+    svar = md.td.tickers.iloc[0]['std']**2
+    print(svar)
+
+    exp_ret = []
+    weight = []
+
+    start_weights = 1/len(md.td.tickers)
+    print(start_weights)
+
+    
+    
     
 
