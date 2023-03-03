@@ -2,6 +2,7 @@ from yfinance import download as yfdown
 from pandas import read_csv, DataFrame, Timestamp
 from pickle import load, dump
 from sklearn.linear_model import LinearRegression
+from matplotlib import pyplot
 
 def now():
     "Returns pandas.Timestamp.now('US/Eastern')"
@@ -10,13 +11,14 @@ def now():
 class Ticker_Deamon:
     # initalize
     def __init__(self):
-        # create DataFrame
+        # create tickers list
         self.tickers = DataFrame({
-            'ticker': list(), 
-            'beta': list(), 
-            'std': list(), 
-            'last_update': list()})            
-        self.tickers.to_csv('tickers.csv',index=False)
+            'ticker': list(),
+            'std': list(),
+            'beta': list(),
+            'last_update': list()
+        })       
+        self.dump_tickers()
 
         # Parameters
         self.period = '10y'
@@ -24,57 +26,70 @@ class Ticker_Deamon:
         self.ohcl = 'Close'
         
         # create index
-        self.index = {
-            'ticker' : 'vti', 
-            'data' : yfdown('vti',period=self.period,interval=self.interval),
-            'date' : now()}
+        self.index = dict()
+        self.set_index('vti')
         
-
-    # Reload tickers
     def reload_ticks(self):
         self.tickers = read_csv('./tickers.csv')
+        return
 
-    # Add tickers
+    def recalc_ticks(self):
+        ticks = self.tickers['ticker'].to_list()
+        for tick in ticks:
+            self.del_tick(tick)
+            self.add_tick(tick)
+        
+        return
+
+    def dump_tickers(self):
+        self.tickers.to_csv('./tickers.csv',index=False)
+        return
+
     def add_tick(self, tick):
         calc = self.calc(tick)
 
-        self.tickers += {
-            'ticker': tick,
-            'beta': calc[0],
-            'std': calc[1],
-            'last_update': now()}
+        self.tickers.loc[-1] = {'ticker':tick,'std':calc[0],'beta':calc[1],'last_update':now()}
+        self.tickers.index = self.tickers.index + 1
+        self.tickers.reset_index(inplace=True, drop = True)
+        self.dump_tickers()
         
         return 
 
-    # remove tickers
     def del_tick(self, tick):
-        pass
+        self.tickers = self.tickers.drop(self.tickers.loc[self.tickers['ticker'] == tick].index[0])
+        self.dump_tickers()
 
-    # update data
+        return
+
     def update_tick(self, tick):
         pass
 
-    # truncate data
     def truncate_data(self, tick, length):
         pass
 
-    # set data history
-    def set_dataLen(self, tick, length):
-        pass
-
-    # calculate points
     def calc(self, tick):
-        data = yfdown(tick, period=self.period, interval=self.interval)
-        
-        std = data[self.ohcl].std()
-        beta = LinearRegression().fit(self.index['data'][[self.ohcl]],data[[self.ohcl]]).coef_[0][0]
+        bdata = DataFrame()
+        data = yfdown(tick, period=self.period, interval=self.interval)[[self.ohcl]].dropna()
+
+        bdata['y'] = data.pct_change().dropna()
+        bdata['x'] = self.index['data'].pct_change().dropna()
+
+        bdata = bdata.dropna()
+
+        std = bdata['y'].std()
+        beta = LinearRegression().fit(bdata[['x']],bdata[['y']]).coef_[0][0]
 
         return (std, beta)
 
     def set_index(self, tick):
         self.index['ticker'] = tick
-        self.index['data'] = yfdown(tick,period=self.period,interval=self.interval)
+        self.index['data'] = yfdown(tick,period=self.period,interval=self.interval)[[self.ohcl]].dropna()
+        self.index['std'] = self.index['data'].pct_change().dropna()[self.ohcl].std()
         self.index['date'] = now()
+
+        self.recalc_ticks()
+
+        return 
 
     def set_period(self, period):
         """
@@ -99,27 +114,67 @@ class Ticker_Deamon:
         '''
         self.ohcl = ohcl
 
-    def solve_beta(self, tick):
-        return 
+    def dump_tickDeamon(self):
+        dump(self,open('./Conf/TickerDeamon.conf','wb'))
+
 
 class Markowitz_Deamon:
-    pass
-    # read ticker data
+    def __init__(self) -> None:
+        self.td = Ticker_Deamon()
+        self.rf = float()
+        self.mr = float()
+        self.set_riskFree(.04) # set empty when finished with function
+        self.set_marketReturn(.08) # set empty when finished with function
 
-    # set index
+        self.mMatrix = DataFrame()
+    
+    # Needs work inside
+    def set_riskFree(self,rate=None):
+        if rate == None:
+            # Devolpe call from treasury website to pull relevant RF ratge
+            print('go out and find riskfree from treasury site')
+            # rate = n_rate
+        self.rf = rate
 
-    # set risk free
+    # Needs work inside
+    def set_marketReturn(self, marketReturn = None):
+        if marketReturn == None:
+            # need to add code to create a PY // avg market return
+            print('Go out and find market return')
+        self.mr = marketReturn
+    
+    def expected_return(self,beta):
+        return self.rf + beta*(self.mr-self.rf)
 
-    # call risk free
-
-    # set market return
-
-    # return covariance
-
+    def covariance(self, betaOne, betaTwo):
+        return betaOne * betaTwo * (self.td.index['std']**2)
+    
     # risk aversion
+
+    # shorting?
 
     # any additional limits!
 
 if __name__ == '__main__':
-    data = yfdown('spy',start='2010-01-01',end='2020-12-31',period='10y',interval='1mo')
-    print(data)
+    md = Markowitz_Deamon()
+    md.td.add_tick('bac')
+    md.td.add_tick('tsla')
+    md.td.add_tick('v')
+    md.td.add_tick('xom')
+
+    print(md.td.tickers)
+
+    for i in md.td.tickers.index:
+        tbeta = md.td.tickers.iloc[i]['beta']
+        ticker = md.td.tickers.iloc[i]['ticker']
+        Er = md.expected_return(tbeta)
+        covar = list()
+        for beta in md.td.tickers['beta']:
+            if beta == tbeta:
+                covar.append(1)
+            else:
+                covar.append(tbeta * beta * (md.td.index['std']**2))
+
+        md.mMatrix[ticker] = [Er,covar]
+
+    
