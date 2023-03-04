@@ -3,6 +3,7 @@ from pandas import read_csv, DataFrame, Timestamp
 from pickle import load, dump
 from sklearn.linear_model import LinearRegression
 from matplotlib import pyplot
+from math import sqrt
 
 def now():
     "Returns pandas.Timestamp.now('US/Eastern')"
@@ -117,64 +118,87 @@ class Ticker_Deamon:
     def dump_tickDeamon(self):
         dump(self,open('./Conf/TickerDeamon.conf','wb'))
 
+def build_frontier(tick):
+    ret = rf + tick['beta']*(mr-rf)
+        
+    pw = []
+    tw = []
+    er = []
+    std = []
 
-class Markowitz_Deamon:
-    def __init__(self) -> None:
-        self.td = Ticker_Deamon()
-        self.rf = float()
-        self.mr = float()
-        self.set_riskFree(.04) # set empty when finished with function
-        self.set_marketReturn(.08) # set empty when finished with function
+    for weight in range(0,100,1):
+        pw.append(weight/100)
+        tw.append(1-pw[-1])
 
-        self.mMatrix = DataFrame()
-    
-    # Needs work inside
-    def set_riskFree(self,rate=None):
-        if rate == None:
-            # Devolpe call from treasury website to pull relevant RF ratge
-            print('go out and find riskfree from treasury site')
-            # rate = n_rate
-        self.rf = rate
+        er.append((pw[-1]*ptf['ret'])+(tw[-1]*ret))
+        std.append(sqrt((pw[-1]**2*ptf['std']**2)+(tw[-1]**2*tick['std']**2)+(ptf['beta']*tick['beta']*mstd**2)))
+        
+    perform = DataFrame({'pw':pw,'tw':tw,'er':er,'std':std})
 
-    # Needs work inside
-    def set_marketReturn(self, marketReturn = None):
-        if marketReturn == None:
-            # need to add code to create a PY // avg market return
-            print('Go out and find market return')
-        self.mr = marketReturn
-    
-    def expected_return(self,beta):
-        return self.rf + beta*(self.mr-self.rf)
-
-    def covariance(self, betaOne, betaTwo):
-        return betaOne * betaTwo * (self.td.index['std']**2)
-    
-    # risk aversion
-
-    # shorting?
-
-    # any additional limits!
+    return perform
 
 if __name__ == '__main__':
-    md = Markowitz_Deamon()
-    md.td.add_tick('bac')
-    md.td.add_tick('tsla')
-    md.td.add_tick('v')
-    md.td.add_tick('xom')
+    td = Ticker_Deamon()
+    td.add_tick('bac')
+    td.add_tick('tsla')
+    td.add_tick('v')
+    td.add_tick('xom')
+    td.add_tick('COO')
+    td.add_tick('ilmn')
+    td.add_tick('algn')
+    td.add_tick('hrl')
+    td.add_tick('cost')
+    td.add_tick('lumn')
+    td.add_tick('nvda')
+    td.add_tick('ai')
+    td.add_tick('bkng')
+    td.add_tick('gww')
+    td.add_tick('fslr')
+    td.add_tick('lin')
+    td.add_tick('uri')
+    td.add_tick('f')
+    td.add_tick('glpg')
 
-    print(md.td.tickers)
+    mr = .08
+    rf = .04
+    mstd = td.index['std']
 
-    for i in md.td.tickers.index:
-        tbeta = md.td.tickers.iloc[i]['beta']
-        ticker = md.td.tickers.iloc[i]['ticker']
-        Er = md.expected_return(tbeta)
-        covar = list()
-        for beta in md.td.tickers['beta']:
-            if beta == tbeta:
-                covar.append(1)
-            else:
-                covar.append(tbeta * beta * (md.td.index['std']**2))
+    ptf = {}
 
-        md.mMatrix[ticker] = [Er,covar]
+    df = td.tickers.T
+    tick = df.pop(0)
 
-    
+    ptf['ret'] = rf + tick['beta']*(mr-rf)
+    ptf['beta'] = tick['beta']
+    ptf['std'] = tick['std']
+    ptf['ticks'] = {tick['ticker']:1}
+
+    for col in df.columns:
+        # print(df.T)
+        # print('current ptf: ',ptf)
+        tick = df.pop(col)
+
+        perform = build_frontier(tick)
+
+        perform['slope'] = (rf-perform['er'])/(-perform['std'])
+        efficient = perform.loc[perform['slope'] == perform['slope'].max()]
+        efficient.reset_index(inplace=True)
+
+        
+        # pyplot.plot(perform['std'],perform['er'])
+        # pyplot.scatter(efficient['std'],efficient['er'])
+        # pyplot.show()
+
+        ptf['ret'] = efficient['er'][0]
+        ptf['std'] = efficient['std'][0]
+        ptf['beta'] = (ptf['ret']-rf)/(mr-rf)
+
+        for ticks in ptf['ticks']:
+            ptf['ticks'][ticks] = ptf['ticks'][ticks] * efficient['pw'][0]
+        
+        ptf['ticks'][tick['ticker']] = efficient['tw'][0]
+
+        print('ptf ret: ',ptf['ret'],'   ptf std:',ptf['std'])
+    print(ptf['ticks'])
+
+
