@@ -19,7 +19,7 @@ class Ticker_Deamon:
             'beta': list(),
             'last_update': list()
         })       
-        self.dump_tickers()
+        # self.dump_tickers()
 
         # Parameters
         self.period = '10y'
@@ -52,13 +52,13 @@ class Ticker_Deamon:
         self.tickers.loc[-1] = {'ticker':tick,'std':calc[0],'beta':calc[1],'last_update':now()}
         self.tickers.index = self.tickers.index + 1
         self.tickers.reset_index(inplace=True, drop = True)
-        self.dump_tickers()
+        # self.dump_tickers()
         
         return 
 
     def del_tick(self, tick):
         self.tickers = self.tickers.drop(self.tickers.loc[self.tickers['ticker'] == tick].index[0])
-        self.dump_tickers()
+        # self.dump_tickers()
 
         return
 
@@ -82,10 +82,21 @@ class Ticker_Deamon:
 
         return (std, beta)
 
+    def index_return(self, data):
+        new = data.iloc[-1]
+        old = data.iloc[0]
+        
+        ret = (new[self.ohcl]-old[self.ohcl])/old[self.ohcl]
+        years = (new.name - old.name).days/365
+        annualized = ret/years
+
+        return annualized
+
     def set_index(self, tick):
         self.index['ticker'] = tick
         self.index['data'] = yfdown(tick,period=self.period,interval=self.interval)[[self.ohcl]].dropna()
         self.index['std'] = self.index['data'].pct_change().dropna()[self.ohcl].std()
+        self.index['return'] = self.index_return(self.index['data'])
         self.index['date'] = now()
 
         self.recalc_ticks()
@@ -118,87 +129,93 @@ class Ticker_Deamon:
     def dump_tickDeamon(self):
         dump(self,open('./Conf/TickerDeamon.conf','wb'))
 
-def build_frontier(tick):
-    ret = rf + tick['beta']*(mr-rf)
+
+class Markowitz_Deamon():
+    def __init__(self) -> None:
+        self.td = Ticker_Deamon()
+        self.rf = .04
+        self.mstd = self.td.index['std']
+        self.mr = self.td.index['return']
+        self.ptf = {}
+
+    def set_index(self, tick):
+        self.td.set_index(tick)
+        self.mstd = self.td.index['std']
+        self.mr = self.td.index['return']
+
+    def add_tick(self, tick):
+        self.td.add_tick(tick)
+    
+    def del_tick(self, tick):
+        self.td.del_tick(tick)
+
+    def build_frontier(self, tick):
+        ret = self.rf + tick['beta']*(self.mr-self.rf)
+            
+        pw = []
+        tw = []
+        er = []
+        std = []
+
+        for weight in range(0,100,1):
+            pw.append(weight/100)
+            tw.append(1-pw[-1])
+
+            er.append((pw[-1]*self.ptf['ret'])+(tw[-1]*ret))
+            std.append(sqrt((pw[-1]**2*self.ptf['std']**2)+(tw[-1]**2*tick['std']**2)+(self.ptf['beta']*tick['beta']*self.mstd**2)))
+            
+        perform = DataFrame({'pw':pw,'tw':tw,'er':er,'std':std})
+
+        return perform
+
+    def build_ptf(self):
+        self.ptf = {}
+
+        df = self.td.tickers.T
+        tick = df.pop(0)
+
+        self.ptf['ret'] = self.rf + tick['beta']*(self.mr-self.rf)
+        self.ptf['beta'] = tick['beta']
+        self.ptf['std'] = tick['std']
+        self.ptf['ticks'] = {tick['ticker']:1}
+
+        for col in df.columns:
+            tick = df.pop(col)
+
+            perform = self.build_frontier(tick)
+
+            perform['slope'] = (self.rf-perform['er'])/(-perform['std'])
+            efficient = perform.loc[perform['slope'] == perform['slope'].max()]
+            efficient.reset_index(inplace=True)
+
+            # pyplot.plot(perform['std'],perform['er'])
+            # pyplot.scatter(efficient['std'],efficient['er'])
+            # pyplot.show()
+
+            self.ptf['ret'] = efficient['er'][0]
+            self.ptf['std'] = efficient['std'][0]
+            self.ptf['beta'] = (self.ptf['ret']-self.rf)/(self.mr-self.rf)
+
+            for ticks in self.ptf['ticks']:
+                self.ptf['ticks'][ticks] = self.ptf['ticks'][ticks] * efficient['pw'][0]
+            
+            self.ptf['ticks'][tick['ticker']] = efficient['tw'][0]
         
-    pw = []
-    tw = []
-    er = []
-    std = []
+        return self.ptf
 
-    for weight in range(0,100,1):
-        pw.append(weight/100)
-        tw.append(1-pw[-1])
-
-        er.append((pw[-1]*ptf['ret'])+(tw[-1]*ret))
-        std.append(sqrt((pw[-1]**2*ptf['std']**2)+(tw[-1]**2*tick['std']**2)+(ptf['beta']*tick['beta']*mstd**2)))
-        
-    perform = DataFrame({'pw':pw,'tw':tw,'er':er,'std':std})
-
-    return perform
+    def save(self):
+        dump(self,open('./Conf/markowitz.conf','wb'))
 
 if __name__ == '__main__':
-    td = Ticker_Deamon()
-    td.add_tick('bac')
-    td.add_tick('tsla')
-    td.add_tick('v')
-    td.add_tick('xom')
-    td.add_tick('COO')
-    td.add_tick('ilmn')
-    td.add_tick('algn')
-    td.add_tick('hrl')
-    td.add_tick('cost')
-    td.add_tick('lumn')
-    td.add_tick('nvda')
-    td.add_tick('ai')
-    td.add_tick('bkng')
-    td.add_tick('gww')
-    td.add_tick('fslr')
-    td.add_tick('lin')
-    td.add_tick('uri')
-    td.add_tick('f')
-    td.add_tick('glpg')
+    m = Markowitz_Deamon()
 
-    mr = .08
-    rf = .04
-    mstd = td.index['std']
+    m.set_index('spy')
+    m.add_tick('bac')
+    m.add_tick('tsla')
+    m.add_tick('v')
+    m.add_tick('f')
+    m.add_tick('xom')
 
-    ptf = {}
-
-    df = td.tickers.T
-    tick = df.pop(0)
-
-    ptf['ret'] = rf + tick['beta']*(mr-rf)
-    ptf['beta'] = tick['beta']
-    ptf['std'] = tick['std']
-    ptf['ticks'] = {tick['ticker']:1}
-
-    for col in df.columns:
-        # print(df.T)
-        # print('current ptf: ',ptf)
-        tick = df.pop(col)
-
-        perform = build_frontier(tick)
-
-        perform['slope'] = (rf-perform['er'])/(-perform['std'])
-        efficient = perform.loc[perform['slope'] == perform['slope'].max()]
-        efficient.reset_index(inplace=True)
-
-        
-        # pyplot.plot(perform['std'],perform['er'])
-        # pyplot.scatter(efficient['std'],efficient['er'])
-        # pyplot.show()
-
-        ptf['ret'] = efficient['er'][0]
-        ptf['std'] = efficient['std'][0]
-        ptf['beta'] = (ptf['ret']-rf)/(mr-rf)
-
-        for ticks in ptf['ticks']:
-            ptf['ticks'][ticks] = ptf['ticks'][ticks] * efficient['pw'][0]
-        
-        ptf['ticks'][tick['ticker']] = efficient['tw'][0]
-
-        print('ptf ret: ',ptf['ret'],'   ptf std:',ptf['std'])
-    print(ptf['ticks'])
-
-
+    ptf = m.build_ptf()
+    print(ptf)
+    m.save()
