@@ -82,7 +82,7 @@ class Ticker_Deamon:
 
         return (std, beta)
 
-    def index_return(self, data):
+    def annualize_return(self, data):
         new = data.iloc[-1]
         old = data.iloc[0]
         
@@ -96,7 +96,7 @@ class Ticker_Deamon:
         self.index['ticker'] = tick
         self.index['data'] = yfdown(tick,period=self.period,interval=self.interval)[[self.ohcl]].dropna()
         self.index['std'] = self.index['data'].pct_change().dropna()[self.ohcl].std()
-        self.index['return'] = self.index_return(self.index['data'])
+        self.index['return'] = self.annualize_return(self.index['data'])
         self.index['date'] = now()
 
         self.recalc_ticks()
@@ -133,7 +133,8 @@ class Ticker_Deamon:
 class Markowitz_Deamon():
     def __init__(self) -> None:
         self.td = Ticker_Deamon()
-        self.rf = .04
+        self.rfd = {}
+        self.rf = float()
         self.mstd = self.td.index['std']
         self.mr = self.td.index['return']
         self.ptf = {}
@@ -142,6 +143,21 @@ class Markowitz_Deamon():
         self.td.set_index(tick)
         self.mstd = self.td.index['std']
         self.mr = self.td.index['return']
+
+    def set_riskfree(self, tick):
+        """
+        ticks must be:
+            "^IRX" - 13 weeks
+            "^FVX" -  5 year
+            "^TNX" - 10 year
+            "^TYX" - 30 year
+        """
+        self.rfd['ticker'] = tick
+        self.rfd['data'] = yfdown(tick,period=self.td.period,interval=self.td.interval)[[self.td.ohcl]].dropna()
+        self.rfd['rate'] = self.rfd['data'].iloc[-1]['Close']
+        self.rfd['date'] = now()
+
+        self.rf = self.rfd['rate']
 
     def add_tick(self, tick):
         self.td.add_tick(tick)
@@ -201,7 +217,7 @@ class Markowitz_Deamon():
             
             self.ptf['ticks'][tick['ticker']] = efficient['tw'][0]
         
-        return self.ptf
+        return perform, efficient
 
     def save(self):
         dump(self,open('./Conf/markowitz.conf','wb'))
@@ -209,13 +225,13 @@ class Markowitz_Deamon():
 if __name__ == '__main__':
     m = Markowitz_Deamon()
 
-    m.set_index('spy')
+    m.set_index('vti')
+    m.set_riskfree('^IRX')
     m.add_tick('bac')
     m.add_tick('tsla')
     m.add_tick('v')
-    m.add_tick('f')
     m.add_tick('xom')
 
-    ptf = m.build_ptf()
-    print(ptf)
+    perform, efficient = m.build_ptf()
+    print(m.ptf)
     m.save()
