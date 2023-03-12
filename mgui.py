@@ -121,11 +121,9 @@ def add_tick(sender, app_data):
         dpg.add_text(tag=f"{stk['ticker']}-last_update",default_value=f'{dt}')
         dpg.add_button(tag=f"{stk['ticker']}-delete",label='delete',callback=del_tick,user_data=f"{stk['ticker']}")
 
-
 def del_tick(sender, app_data, user_data):    
     m.del_tick(user_data)
     dpg.delete_item((f"{user_data}").lower()+"-row")
-
 
 def ticker_table():
     with dpg.group():
