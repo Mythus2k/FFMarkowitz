@@ -69,7 +69,7 @@ def build_Ttable():
         dt = str(dt.day)+'/'+str(dt.month)+'/'+str(dt.year)
 
         with dpg.table_row():
-            dpg.add_text(tag='Rtreas',default_value=f'{m.rfd["rate"]/100:.4%}')
+            dpg.add_text(tag='Rtreas',default_value=f'{m.rfd["rate"]:.4%}')
             dpg.add_text(tag='Dtreas',default_value=f'{dt}')
 
 def set_treasury(sender, app_data):
@@ -86,7 +86,7 @@ def set_treasury(sender, app_data):
     dt = m.rfd['date']
     dt = str(dt.day)+'/'+str(dt.month)+'/'+str(dt.year)
 
-    dpg.configure_item('Rtreas',default_value=f'{m.rfd["rate"]/100:.4%}')
+    dpg.configure_item('Rtreas',default_value=f'{m.rfd["rate"]:.4%}')
     dpg.configure_item('Dtreas',default_value=f'{dt}')
 
 def index_rf_table():
@@ -148,8 +148,25 @@ def ticker_table():
                     dpg.add_text(tag=f"{stk['ticker']}-last_update",default_value=f'{dt}')
                     dpg.add_button(tag=f"{stk['ticker']}-delete",label='delete',callback=del_tick,user_data=f"{stk['ticker']}")
 
+# ======= Efficient Frontier =======
+def build_ptf():
+    m.build_ptf()
+    dpg.configure_item('eff_front',x=m.perform['std'].to_list(),y=m.perform['er'].to_list())
+
+def frontier_graph():
+    dpg.add_button(label='Build Portfolio',callback=build_ptf)
+
+    with dpg.plot(label="Efficient Frontier", height=320, width=320):
+        # REQUIRED: create x and y axes
+        dpg.add_plot_axis(dpg.mvXAxis, label="std")
+        dpg.add_plot_axis(dpg.mvYAxis, label="E(r)", tag="y_axis")
+
+        # series belong to a y axis
+        dpg.add_line_series(m.perform['std'].to_list(), m.perform['er'].to_list(), label="Efficient Frontier", parent="y_axis",tag='eff_front')
+
 # ======== GUI building ========
 with dpg.window(tag='Primary Window'):
+    # top half (inputs)
     with dpg.table(header_row=False,policy=dpg.mvTable_SizingStretchProp):
         dpg.add_table_column(label='inputs')
         dpg.add_table_column(label='tickers')
@@ -161,8 +178,20 @@ with dpg.window(tag='Primary Window'):
             # add section to manipulate tickers in portfolio
             ticker_table()
 
+    # bottom half (graph - outputs)
+    with dpg.table(header_row=False,policy=dpg.mvTable_SizingStretchProp):
+        dpg.add_table_column(label='graph')
+        dpg.add_table_column(label='output')
 
-dpg.create_viewport(title='Markowitz Portfolio Solver', width=600, height=600)
+        with dpg.table_row():
+            # add graph with slider for desired return
+            with dpg.group():
+                frontier_graph()
+
+            # add table of investment weights
+
+
+dpg.create_viewport(title='Markowitz Portfolio Solver', width=700, height=600)
 
 dpg.setup_dearpygui()
 dpg.show_viewport()

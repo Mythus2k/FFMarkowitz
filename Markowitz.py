@@ -57,9 +57,7 @@ class Ticker_Deamon:
         return 
 
     def del_tick(self, tick):
-        self.tickers = self.tickers.drop(self.tickers.loc[self.tickers['ticker'] == tick].index[0])
-        # self.dump_tickers()
-
+        self.tickers = self.tickers.drop(self.tickers.loc[self.tickers['ticker'] == tick].index[0]).reset_index(drop=True)
         return
 
     def update_tick(self, tick):
@@ -138,6 +136,8 @@ class Markowitz_Deamon():
         self.mstd = self.td.index['std']
         self.mr = self.td.index['return']
         self.ptf = {}
+        self.perform = None
+        self.efficient = None
 
     def set_index(self, tick):
         self.td.set_index(tick)
@@ -153,7 +153,7 @@ class Markowitz_Deamon():
             "^TYX" - 30 year
         """
         self.rfd['ticker'] = tick
-        self.rfd['data'] = yfdown(tick,period=self.td.period,interval=self.td.interval)[[self.td.ohcl]].dropna()
+        self.rfd['data'] = yfdown(tick,period=self.td.period,interval=self.td.interval)[[self.td.ohcl]].dropna()/100
         self.rfd['rate'] = self.rfd['data'].iloc[-1]['Close']
         self.rfd['date'] = now()
 
@@ -204,6 +204,8 @@ class Markowitz_Deamon():
             efficient = perform.loc[perform['slope'] == perform['slope'].max()]
             efficient.reset_index(inplace=True)
 
+            # print(perform['slope'])
+            # print(efficient)
             # pyplot.plot(perform['std'],perform['er'])
             # pyplot.scatter(efficient['std'],efficient['er'])
             # pyplot.show()
@@ -216,8 +218,9 @@ class Markowitz_Deamon():
                 self.ptf['ticks'][ticks] = self.ptf['ticks'][ticks] * efficient['pw'][0]
             
             self.ptf['ticks'][tick['ticker']] = efficient['tw'][0]
-        
-        return perform, efficient
+            
+            self.perform = perform
+            self.efficient = efficient
 
     def save(self):
         dump(self,open('./Conf/markowitz.conf','wb'))
@@ -227,11 +230,10 @@ if __name__ == '__main__':
 
     m.set_index('vti')
     m.set_riskfree('^IRX')
-    m.add_tick('bac')
     m.add_tick('tsla')
     m.add_tick('v')
     m.add_tick('xom')
 
-    perform, efficient = m.build_ptf()
+    m.build_ptf()
     print(m.ptf)
     m.save()
