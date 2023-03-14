@@ -3,6 +3,7 @@
 import dearpygui.dearpygui as dpg
 from Markowitz import Markowitz_Deamon, Ticker_Deamon
 from pickle import load
+from pandas import DataFrame
 
 m = load(open('./Conf/markowitz.conf','rb'))
 
@@ -102,6 +103,9 @@ def index_rf_table():
         with dpg.table_row():
             with dpg.group():
                 build_Ttable()
+        
+        with dpg.table_row():
+            dpg.add_checkbox(label='leveraging')
 
 # ======= Ticker Items ========
 def add_tick(sender, app_data):
@@ -131,7 +135,8 @@ def ticker_table():
                     callback=add_tick, on_enter=True,
                     width=55,hint='ticker')
 
-        with dpg.table(tag='ticker_table',header_row=True,policy=dpg.mvTable_SizingStretchProp):
+        with dpg.table(tag='ticker_table',header_row=True,policy=dpg.mvTable_SizingStretchProp,
+                        scrollY=True,height=180,freeze_rows=1):
             cols = ['ticker','beta','last_update','Delete']
             for c in cols:
                 dpg.add_table_column(label=c)
@@ -152,43 +157,121 @@ def ticker_table():
 def build_ptf():
     m.build_ptf()
     dpg.configure_item('eff_front',x=m.perform['std'].to_list(),y=m.perform['er'].to_list())
+    x_axis, y_axis = efficient_line()
+    dpg.configure_item('risk_line',x=x_axis,y=y_axis)
+    plot_point(None,dpg.get_value('risk_level'))
+
+def efficient_line():
+    x_axis = list()
+    y_axis = list()
+    for x in range(0,int(m.efficient['std']*1.5*1000)):
+        x_axis.append(x/1000)
+    for x in iter(x_axis):
+        y_axis.append(m.efficient['slope'][0]*x + m.rf)
+
+    return x_axis, y_axis
+
+def plot_point(sender, app_data):
+    x_value = m.efficient['std'][0]*(app_data/100)
+
+    m.ptf_x = x_value
+    m.ptf_y = (m.efficient['slope'][0]*x_value + m.rf)
+
+    dpg.configure_item('ptf_ret',default_value=f"{m.ptf_y:.2%}")
+    dpg.configure_item('ptf_std',default_value=f"{m.ptf_x:.2%}")
+    dpg.configure_item('min_ret',default_value=f"{m.ptf_y-m.ptf_x:.2%}")
+
+    dpg.configure_item('desired_risk_point',x=m.ptf_x,y=m.ptf_y)
 
 def frontier_graph():
-    dpg.add_button(label='Build Portfolio',callback=build_ptf)
+    with dpg.table(tag='build_ptf-table',header_row=False,policy=dpg.mvTable_SizingStretchProp):
+        dpg.add_table_column()
+        dpg.add_table_column()
 
-    with dpg.plot(label="Efficient Frontier", height=320, width=320):
+        with dpg.table_row(tag='build_ptf-row'):
+            dpg.add_button(label='Build Portfolio',callback=build_ptf,width=120)
+
+            dpg.add_slider_float(label='Risk level',tag='risk_level',width=160,callback=plot_point,default_value=(100*m.ptf_x)/m.efficient['std'][0])
+
+    with dpg.plot(label="Efficient Frontier", height=320, width=420):
         # REQUIRED: create x and y axes
         dpg.add_plot_axis(dpg.mvXAxis, label="std")
         dpg.add_plot_axis(dpg.mvYAxis, label="E(r)", tag="y_axis")
 
         # series belong to a y axis
-        dpg.add_line_series(m.perform['std'].to_list(), m.perform['er'].to_list(), label="Efficient Frontier", parent="y_axis",tag='eff_front')
+        dpg.add_line_series((m.perform['std']).to_list(), (m.perform['er']).to_list(), label="Efficient Frontier", parent="y_axis",tag='eff_front')
+
+        x_axis, y_axis = efficient_line()
+        dpg.add_line_series(x=x_axis,y=y_axis,label="risk adjuster",parent="y_axis",tag='risk_line')
+
+
+        # if having error after hard reset, comment out this line -> adjust risk level slider -> close normally -> uncomment out -> all fixed
+        dpg.add_scatter_series(x=m.ptf_x,y=m.ptf_y,label='desired risk point',parent='y_axis',tag='desired_risk_point')
+
+# ======= Ptf Data ===========
+
+
+def ptf_data():
+    with dpg.group():
+        with dpg.table(header_row=True,scrollY=True,height=180,freeze_rows=1):
+            cols = ['ticker','weight']
+            for c in cols:
+                dpg.add_table_column(label=f"{c}",tag=f"{c}-column")
+            
+            for r in m.ptf['ticks']:
+                with dpg.table_row(tag=f"{r}-weight_row"):
+                    dpg.add_text(f"{r}")
+                    dpg.add_text(f"{m.ptf['ticks'][r]:.2%}")
+
+        
+        with dpg.table(header_row=False):
+            dpg.add_table_column()
+            dpg.add_table_column()
+
+            with dpg.table_row():
+                dpg.add_text('E(r)')
+                dpg.add_text(f"{m.ptf_y:.2%}",tag='ptf_ret')
+
+            with dpg.table_row():
+                dpg.add_text('Std dev')
+                dpg.add_text(f"{m.ptf_x:.2%}",tag='ptf_std')
+
+            with dpg.table_row():
+                dpg.add_text('Min E(r)')
+                dpg.add_text(f"{m.ptf_y-m.ptf_x:.2%}",tag='min_ret')
+
+            with dpg.table_row():
+                dpg.add_text('Beta')
+                dpg.add_text(f"{m.ptf['beta']:.2}")
 
 # ======== GUI building ========
 with dpg.window(tag='Primary Window'):
-    # top half (inputs)
     with dpg.table(header_row=False,policy=dpg.mvTable_SizingStretchProp):
         dpg.add_table_column(label='inputs')
         dpg.add_table_column(label='tickers')
         
         with dpg.table_row():
-            # adds section to update index and risk free inputs
-            index_rf_table()
-
-            # add section to manipulate tickers in portfolio
-            ticker_table()
-
-    # bottom half (graph - outputs)
-    with dpg.table(header_row=False,policy=dpg.mvTable_SizingStretchProp):
-        dpg.add_table_column(label='graph')
-        dpg.add_table_column(label='output')
-
-        with dpg.table_row():
-            # add graph with slider for desired return
             with dpg.group():
+
+                # adds section to update index and risk free inputs
+                index_rf_table()
+
+                # spacer for visual appeal
+                dpg.add_spacer(height=20)
+
+                # adds graph and stuff to update ptf
                 frontier_graph()
 
-            # add table of investment weights
+            # add section to manipulate tickers in portfolio
+            with dpg.group():
+                # adds table of tickers that can add/del
+                ticker_table()
+
+                # add spacer for visual appeal
+                dpg.add_spacer(height=15)
+
+                # add ptf data to gui
+                ptf_data()
 
 
 dpg.create_viewport(title='Markowitz Portfolio Solver', width=700, height=600)
