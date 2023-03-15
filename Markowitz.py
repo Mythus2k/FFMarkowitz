@@ -140,6 +140,7 @@ class Markowitz_Deamon():
         self.efficient = None
         self.ptf_x = 0
         self.ptf_y = .04
+        self.investing = 1000
 
     def set_index(self, tick):
         self.td.set_index(tick)

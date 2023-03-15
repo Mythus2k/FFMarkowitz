@@ -105,7 +105,7 @@ def index_rf_table():
                 build_Ttable()
         
         with dpg.table_row():
-            dpg.add_checkbox(label='leveraging')
+            dpg.add_checkbox(label='leveraging',show=False)
 
 # ======= Ticker Items ========
 def add_tick(sender, app_data):
@@ -153,13 +153,58 @@ def ticker_table():
                     dpg.add_text(tag=f"{stk['ticker']}-last_update",default_value=f'{dt}')
                     dpg.add_button(tag=f"{stk['ticker']}-delete",label='delete',callback=del_tick,user_data=f"{stk['ticker']}")
 
+# ======= Ptf Data ===========
+def del_ptf_rows():
+    for r in m.ptf['ticks']:
+        dpg.delete_item(f"{r}-weight_row")
+
+def build_ptf_rows():
+    for r in m.ptf['ticks']:
+        with dpg.table_row(tag=f"{r}-weight_row",parent='ptf_data_table'):
+            dpg.add_text(f"{r}".upper())
+            dpg.add_text(f"{m.ptf['ticks'][r]:.2%}")
+            dpg.add_text(f"Not ready")
+
+def ptf_data():
+    with dpg.group():
+        # builds the weights table
+        with dpg.table(header_row=True,scrollY=True,height=180,freeze_rows=1,tag='ptf_data_table'):
+            cols = ['Ticker','Weight','Dollars']
+            for c in cols:
+                dpg.add_table_column(label=f"{c}",tag=f"{c}-column")
+            
+            build_ptf_rows()
+
+        # build return information
+        with dpg.table(header_row=False):
+            dpg.add_table_column()
+            dpg.add_table_column()
+
+            with dpg.table_row():
+                dpg.add_text('E(r)')
+                dpg.add_text(f"{m.ptf_y:.2%}",tag='ptf_ret')
+
+            with dpg.table_row():
+                dpg.add_text('Std dev')
+                dpg.add_text(f"{m.ptf_x:.2%}",tag='ptf_std')
+
+            with dpg.table_row():
+                dpg.add_text('Min E(r)')
+                dpg.add_text(f"{m.ptf_y-m.ptf_x:.2%}",tag='min_ret')
+
+            with dpg.table_row():
+                dpg.add_text('Beta')
+                dpg.add_text(f"{m.ptf['beta']:.2}")
+
 # ======= Efficient Frontier =======
 def build_ptf():
+    del_ptf_rows()
     m.build_ptf()
     dpg.configure_item('eff_front',x=m.perform['std'].to_list(),y=m.perform['er'].to_list())
     x_axis, y_axis = efficient_line()
     dpg.configure_item('risk_line',x=x_axis,y=y_axis)
     plot_point(None,dpg.get_value('risk_level'))
+    build_ptf_rows()
 
 def efficient_line():
     x_axis = list()
@@ -208,42 +253,6 @@ def frontier_graph():
         # if having error after hard reset, comment out this line -> adjust risk level slider -> close normally -> uncomment out -> all fixed
         dpg.add_scatter_series(x=m.ptf_x,y=m.ptf_y,label='desired risk point',parent='y_axis',tag='desired_risk_point')
 
-# ======= Ptf Data ===========
-
-
-def ptf_data():
-    with dpg.group():
-        with dpg.table(header_row=True,scrollY=True,height=180,freeze_rows=1):
-            cols = ['ticker','weight']
-            for c in cols:
-                dpg.add_table_column(label=f"{c}",tag=f"{c}-column")
-            
-            for r in m.ptf['ticks']:
-                with dpg.table_row(tag=f"{r}-weight_row"):
-                    dpg.add_text(f"{r}")
-                    dpg.add_text(f"{m.ptf['ticks'][r]:.2%}")
-
-        
-        with dpg.table(header_row=False):
-            dpg.add_table_column()
-            dpg.add_table_column()
-
-            with dpg.table_row():
-                dpg.add_text('E(r)')
-                dpg.add_text(f"{m.ptf_y:.2%}",tag='ptf_ret')
-
-            with dpg.table_row():
-                dpg.add_text('Std dev')
-                dpg.add_text(f"{m.ptf_x:.2%}",tag='ptf_std')
-
-            with dpg.table_row():
-                dpg.add_text('Min E(r)')
-                dpg.add_text(f"{m.ptf_y-m.ptf_x:.2%}",tag='min_ret')
-
-            with dpg.table_row():
-                dpg.add_text('Beta')
-                dpg.add_text(f"{m.ptf['beta']:.2}")
-
 # ======== GUI building ========
 with dpg.window(tag='Primary Window'):
     with dpg.table(header_row=False,policy=dpg.mvTable_SizingStretchProp):
@@ -268,13 +277,13 @@ with dpg.window(tag='Primary Window'):
                 ticker_table()
 
                 # add spacer for visual appeal
-                dpg.add_spacer(height=15)
+                dpg.add_input_float(label='Investment',tag='ptf_investment',default_value=m.investing,step=100,step_fast=1_000,min_value=0,format='%.2f')
 
                 # add ptf data to gui
                 ptf_data()
 
 
-dpg.create_viewport(title='Markowitz Portfolio Solver', width=700, height=600)
+dpg.create_viewport(title='Markowitz Portfolio Solver', width=720, height=600)
 
 dpg.setup_dearpygui()
 dpg.show_viewport()
