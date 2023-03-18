@@ -1,5 +1,5 @@
 from yfinance import download as yfdown
-from pandas import read_csv, DataFrame, Timestamp
+from pandas import read_csv, DataFrame, Timestamp, concat
 from pickle import load, dump
 from sklearn.linear_model import LinearRegression
 from matplotlib import pyplot
@@ -190,7 +190,26 @@ class Markowitz_Deamon():
     def build_ptf(self):
         self.ptf = {}
 
-        df = self.td.tickers.T
+        # Sort dataframe of tickers by alternating betas
+        df = self.td.tickers.sort_values('beta').reset_index(drop=True)
+        # even len
+        if len(df) % 2 == 0:
+            l = len(df)
+            temp = DataFrame()
+            for o in range(int(l/2)):
+                temp = concat([temp, df[df.index == o]])
+                temp = concat([temp, df[df.index == (l-o-1)]])
+        # uneven len
+        else:
+            l = len(df)
+            temp = DataFrame()
+            for o in range(int(l/2)):
+                temp = concat([temp, df[df.index == o]])
+                temp = concat([temp, df[df.index == (l-o-1)]])
+            temp = concat([temp, df[df.index == int(l/2)]])
+    
+        # Calculate curves and stuff
+        df = temp.iloc[::-1].T
         tick = df.pop(0)
 
         self.ptf['ret'] = self.rf + tick['beta']*(self.mr-self.rf)
@@ -224,6 +243,7 @@ class Markowitz_Deamon():
             
             self.perform = perform
             self.efficient = efficient
+  
 
     def save(self):
         dump(self,open('./Conf/markowitz.conf','wb'))
@@ -236,7 +256,11 @@ if __name__ == '__main__':
     m.add_tick('tsla')
     m.add_tick('v')
     m.add_tick('xom')
+    m.add_tick('meta')
+    m.add_tick('bac')
 
     m.build_ptf()
     print(m.ptf)
+    m.ptf_x = m.efficient['std'][0]
+    m.ptf_y = (100*m.ptf_x)/m.efficient['std'][0]
     m.save()

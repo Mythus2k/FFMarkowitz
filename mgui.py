@@ -189,7 +189,7 @@ def ptf_data():
                 dpg.add_text(f"{m.ptf_x:.2%}",tag='ptf_std')
 
             with dpg.table_row():
-                dpg.add_text('Min E(r)')
+                dpg.add_text('E(r)-(1)std')
                 dpg.add_text(f"{m.ptf_y-m.ptf_x:.2%}",tag='min_ret')
 
             with dpg.table_row():
@@ -250,7 +250,7 @@ def frontier_graph():
         dpg.add_line_series(x=x_axis,y=y_axis,label="risk adjuster",parent="y_axis",tag='risk_line')
 
 
-        # if having error after hard reset, comment out this line -> adjust risk level slider -> close normally -> uncomment out -> all fixed
+        # no longer need to comment this out --- just need to run program, adjust slider, and rerun!
         dpg.add_scatter_series(x=m.ptf_x,y=m.ptf_y,label='desired risk point',parent='y_axis',tag='desired_risk_point')
 
 # ======== GUI building ========
