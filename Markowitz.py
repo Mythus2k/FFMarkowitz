@@ -249,6 +249,7 @@ class Markowitz_Deamon():
     def save(self):
         dump(self,open('./Conf/markowitz.conf','wb'))
 
+
 if __name__ == '__main__':
     m = Markowitz_Deamon()
 
