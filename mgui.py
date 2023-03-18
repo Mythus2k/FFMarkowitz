@@ -1,7 +1,7 @@
 # GUI for Markowitz solver
 
 import dearpygui.dearpygui as dpg
-from Markowitz import Markowitz_Deamon, Ticker_Deamon
+import Markowitz
 from pickle import load
 from pandas import DataFrame
 
