@@ -2,7 +2,7 @@ from yfinance import download as yfdown
 from pandas import read_csv, DataFrame, Timestamp, concat
 from pickle import load, dump
 from sklearn.linear_model import LinearRegression
-from matplotlib import pyplot
+# from matplotlib import pyplot
 from math import sqrt
 
 def now():
@@ -226,6 +226,7 @@ class Markowitz_Deamon():
             efficient = perform.loc[perform['slope'] == perform['slope'].max()]
             efficient.reset_index(inplace=True)
 
+            # pyplot commented out - not in venv
             # print(perform['slope'])
             # print(efficient)
             # pyplot.plot(perform['std'],perform['er'])
