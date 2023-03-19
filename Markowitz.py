@@ -2,7 +2,7 @@ from yfinance import download as yfdown
 from pandas import read_csv, DataFrame, Timestamp, concat
 from pickle import load, dump
 from sklearn.linear_model import LinearRegression
-# from matplotlib import pyplot
+from matplotlib import pyplot
 from math import sqrt
 
 def now():
@@ -244,13 +244,12 @@ class Markowitz_Deamon():
             
             self.perform = perform
             self.efficient = efficient
-  
 
     def save(self):
         dump(self,open('./Conf/markowitz.conf','wb'))
 
 
-if __name__ == '__main__':
+def reset_gui():
     m = Markowitz_Deamon()
 
     m.set_index('vti')
@@ -266,3 +265,46 @@ if __name__ == '__main__':
     m.ptf_x = m.efficient['std'][0]
     m.ptf_y = (100*m.ptf_x)/m.efficient['std'][0]
     m.save()
+
+if __name__ == '__main__':
+    m = load(open('Conf/Markowitz.conf','rb'))
+
+    data = m.td.tickers.set_index('ticker',drop=True).drop('last_update',axis=1)
+
+    # weights
+    w_ = list()
+    for _ in range(len(data.index)):
+        w_.append(1/len(data.index))
+
+    w_ = DataFrame({'weight':w_}).set_index(data.index)
+
+    # returns
+    r_ = list()
+    for tick in data.index:
+        r_.append(m.rf + data['beta'][tick]*(m.mr-m.rf))
+
+    r_ = DataFrame({'return':r_}).set_index(data.index)
+
+
+
+    cvar = dict()
+    for tick in data.index:
+        hvar = list()
+        for tick_ in data.index:
+            covar = (data['beta'][tick] * data['beta'][tick_] * (m.mstd**2))
+            hvar.append(w_['weight'][tick] * w_['weight'][tick_] * covar)
+        
+        cvar[tick] = hvar
+
+    v_ = DataFrame(cvar).set_index(data.index)
+
+    print(w_)
+    print(r_)
+    print(v_)
+
+    
+    ptf_ret = (r_['return'] * w_['weight']).sum()
+    ptf_var = sqrt(v_.sum().sum())
+
+    print(f"ptf var: {ptf_var:.2%}")
+    print(f"ptf ret: {ptf_ret:.2%}")
