@@ -4,6 +4,8 @@ from pickle import load, dump
 from sklearn.linear_model import LinearRegression
 from matplotlib import pyplot
 from math import sqrt
+import cvxpy as cp
+import numpy as np
 
 def now():
     "Returns pandas.Timestamp.now('US/Eastern')"
@@ -187,7 +189,7 @@ class Markowitz_Deamon():
 
         return perform
 
-    def build_ptf(self):
+    def build_ptf_deprecated(self):
         self.ptf = {}
 
         # Sort dataframe of tickers by alternating betas
@@ -245,6 +247,110 @@ class Markowitz_Deamon():
             self.perform = perform
             self.efficient = efficient
 
+    def step_calc(self, data, step):
+        l = len(data.index)
+        neg = list()
+        pos = list()
+        out = list()
+
+        for _ in range(1,1+int(l/2)):
+            neg.append(-step/_)
+            pos.append(step/_)
+
+        if l % 2 == 0:
+            for _ in neg:
+                out.append(_)
+            for _ in pos:
+                out.append(_)
+        
+        else:
+            for _ in neg:
+                out.append(_)
+            out.append(0)
+            for _ in pos:
+                out.append(_)
+
+        return out
+
+    def build_ptf(self,runs=2000,step=.003):
+        data = self.td.tickers.set_index('ticker',drop=True).drop('last_update',axis=1)
+
+        mult = dict()
+        for tick in data.index:
+            mult[tick] = 1
+
+        step = self.step_calc(data, step)
+        finished = False
+        check_var = list()
+        check_ret = list()
+
+        for _ in range(runs):
+            # weights
+            niave = dict()
+            for tick in data.index:
+                niave[tick] = (1/len(data.index))
+
+            w_ = DataFrame({'niave':niave, 'mult':mult}).set_index(data.index)
+
+            w_['weight'] = w_['niave']* w_['mult']
+            
+            # leveraging check
+            if w_['weight'].min() < 0:
+                # print('weight going into leverage')
+                # print(f"run {_}/{runs}")
+                # print(weight)
+                # print(f"ptf var: {ptf_var:.2%}")
+                # print(f"ptf ret: {ptf_ret:.2%}")
+                # print('weights solved')
+                break
+
+            # returns
+            r_ = list()
+            for tick in data.index:
+                r_.append(self.rf + data['beta'][tick]*(self.mr-self.rf))
+
+            r_ = DataFrame({'return':r_}).set_index(data.index)
+
+            # solve covariance matrix
+            cvar = dict()
+            for tick in data.index:
+                hvar = list()
+                for tick_ in data.index:
+                    covar = (data['beta'][tick] * data['beta'][tick_] * (self.mstd**2))
+                    hvar.append(w_['weight'][tick] * w_['weight'][tick_] * covar)
+                
+                cvar[tick] = hvar
+
+            v_ = DataFrame(cvar).set_index(data.index)
+
+            # update weight multiplier
+            update_mults = v_.sum().sort_values().reset_index(name='std').drop('std',axis=1)
+            for i in update_mults.index:
+                mult[update_mults['index'][i]] += step[i]
+            
+            # outputs
+            ptf_ret = (r_['return'] * w_['weight']).sum()
+            ptf_std = sqrt(v_.sum().sum())
+
+            weight = w_
+
+            # updates for cmd
+            # if _ % 200 == 0:
+            #     print(f"run {_}/{runs}")
+            #     print(weight)
+            #     print(f"ptf std: {ptf_std:.2%}")
+            #     print(f"ptf ret: {ptf_ret:.2%}")
+
+        # graphing
+        y_ = r_
+        x_ = data['std'].to_list()
+
+        # pyplot.scatter(x_,y_)
+        # pyplot.scatter(ptf_std,ptf_ret)
+        # pyplot.show()
+
+        self.ptf = {'ret':ptf_ret,'std':ptf_std,'ticks':weight['weight'].to_dict()}
+
     def save(self):
         dump(self,open('./Conf/markowitz.conf','wb'))
 
@@ -262,124 +368,12 @@ def reset_gui():
 
     m.build_ptf()
     print(m.ptf)
-    m.ptf_x = m.efficient['std'][0]
-    m.ptf_y = (100*m.ptf_x)/m.efficient['std'][0]
     m.save()
-
-def ret_frame(data):
-    r_ = list()
-    for tick in data.index:
-        r_.append(m.rf + data['beta'][tick]*(m.mr-m.rf))
-
-    return DataFrame({'return':r_}).set_index(data.index)
-
-def cvar_frame(data):
-    cvar = dict()
-    for tick in data.index:
-        hvar = list()
-        for tick_ in data.index:
-            covar = (data['beta'][tick] * data['beta'][tick_] * (m.mstd**2))
-            hvar.append(w_['weight'][tick] * w_['weight'][tick_] * covar)
-        
-        cvar[tick] = hvar
-
-    return DataFrame(cvar).set_index(data.index)
-
-def weight_frame(data, mult):
-    niave = dict()
-    for tick in data.index:
-        niave[tick] = (1/len(data.index))
-
-    w_ = DataFrame({'niave':niave, 'mult':mult}).set_index(data.index)
-
-    w_['weight'] = w_['niave']* w_['mult']
-
-    return w_
-
-def step_calc(data, step):
-    l = len(data.index)
-    neg = list()
-    pos = list()
-    out = list()
-
-    for _ in range(1,1+int(l/2)):
-        neg.append(-step/_)
-        pos.append(step/_)
-
-    if l % 2 == 0:
-        for _ in neg:
-            out.append(_)
-        for _ in pos:
-            out.append(_)
-    
-    else:
-        for _ in neg:
-            out.append(_)
-        out.append(0)
-        for _ in pos:
-            out.append(_)
-
-    return out
 
 
 if __name__ == '__main__':
-    m = load(open('Conf/Markowitz.conf','rb'))
+    # m = load(open('./Conf/Markowitz.conf','rb'))
 
-    data = m.td.tickers.set_index('ticker',drop=True).drop('last_update',axis=1)
-    mult = dict()
-    for tick in data.index:
-        mult[tick] = 1
-
-
-    runs = 2000
-    step = step_calc(data, .003)
-    finished = False
-    check_var = list()
-    check_ret = list()
-
-    for _ in range(runs):
-        # weights
-        w_ = weight_frame(data, mult)
-        
-        # leveraging check
-        if w_['weight'].min() < 0:
-            print('weight going into leverage')
-            print(f"run {_}/{runs}")
-            print(weight)
-            print(f"ptf var: {ptf_var:.2%}")
-            print(f"ptf ret: {ptf_ret:.2%}")
-            print('weights solved')
-            break
-
-        # returns
-        r_ = ret_frame(data)
-
-        # solve covariance matrix
-        v_ = cvar_frame(data)
-
-        # update weight multiplier
-        update_mults = v_.sum().sort_values().reset_index(name='std').drop('std',axis=1)
-        for i in update_mults.index:
-            mult[update_mults['index'][i]] += step[i]
-        
-        # outputs
-        ptf_ret = (r_['return'] * w_['weight']).sum()
-        ptf_var = sqrt(v_.sum().sum())
-
-        weight = w_
-
-        # updates for cmd
-        # if _ % 500 == 0:
-        #     print(f"run {_}/{runs}")
-        #     print(weight)
-        #     print(f"ptf var: {ptf_var:.2%}")
-        #     print(f"ptf ret: {ptf_ret:.2%}")
-
-
-    # graphing
-    y_ = ret_frame(data)
-    x_ = data['std'].to_list()
-
-    pyplot.scatter(x_,y_)
-    pyplot.scatter(ptf_var,ptf_ret)
-    pyplot.show()
+    # m.build_ptf()
+     
+    reset_gui()

@@ -192,18 +192,18 @@ def ptf_data():
                 dpg.add_text('E(r)-(1)std')
                 dpg.add_text(f"{m.ptf_y-m.ptf_x:.2%}",tag='min_ret')
 
-            with dpg.table_row():
-                dpg.add_text('Beta')
-                dpg.add_text(f"{m.ptf['beta']:.2}")
+            # with dpg.table_row():
+            #     dpg.add_text('Beta')
+            #     dpg.add_text(f"{m.ptf['beta']:.2}")
 
 # ======= Efficient Frontier =======
 def build_ptf():
     del_ptf_rows()
     m.build_ptf()
-    dpg.configure_item('eff_front',x=m.perform['std'].to_list(),y=m.perform['er'].to_list())
-    x_axis, y_axis = efficient_line()
-    dpg.configure_item('risk_line',x=x_axis,y=y_axis)
-    plot_point(None,dpg.get_value('risk_level'))
+    # dpg.configure_item('eff_front',x=m.perform['std'].to_list(),y=m.perform['er'].to_list())
+    # x_axis, y_axis = efficient_line()
+    # dpg.configure_item('risk_line',x=x_axis,y=y_axis)
+    # plot_point(None,dpg.get_value('risk_level'))
     build_ptf_rows()
 
 def efficient_line():
@@ -228,7 +228,7 @@ def plot_point(sender, app_data):
 
     dpg.configure_item('desired_risk_point',x=m.ptf_x,y=m.ptf_y)
 
-def frontier_graph():
+def build_ptf_button():
     with dpg.table(tag='build_ptf-table',header_row=False,policy=dpg.mvTable_SizingStretchProp):
         dpg.add_table_column()
         dpg.add_table_column()
@@ -236,7 +236,9 @@ def frontier_graph():
         with dpg.table_row(tag='build_ptf-row'):
             dpg.add_button(label='Build Portfolio',callback=build_ptf,width=120)
 
-            dpg.add_slider_float(label='Risk level',tag='risk_level',width=160,callback=plot_point,default_value=(100*m.ptf_x)/m.efficient['std'][0])
+            # dpg.add_slider_float(label='Risk level',tag='risk_level',width=160,callback=plot_point,default_value=(100*m.ptf_x)/m.efficient['std'][0])
+
+def frontier_graph():
 
     with dpg.plot(label="Efficient Frontier", height=320, width=420):
         # REQUIRED: create x and y axes
@@ -269,7 +271,8 @@ with dpg.window(tag='Primary Window'):
                 dpg.add_spacer(height=20)
 
                 # adds graph and stuff to update ptf
-                frontier_graph()
+                build_ptf_button()
+                # frontier_graph()
 
             # add section to manipulate tickers in portfolio
             with dpg.group():
