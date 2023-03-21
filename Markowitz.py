@@ -4,8 +4,6 @@ from pickle import load, dump
 from sklearn.linear_model import LinearRegression
 from matplotlib import pyplot
 from math import sqrt
-import cvxpy as cp
-import numpy as np
 
 def now():
     "Returns pandas.Timestamp.now('US/Eastern')"
@@ -13,7 +11,7 @@ def now():
 
 class Ticker_Deamon:
     # initalize
-    def __init__(self):
+    def __init__(self, period='1y', interval='1mo', ohcl= 'Adj Close'):
         # create tickers list
         self.tickers = DataFrame({
             'ticker': list(),
@@ -21,20 +19,15 @@ class Ticker_Deamon:
             'beta': list(),
             'last_update': list()
         })       
-        # self.dump_tickers()
 
         # Parameters
-        self.period = '10y'
-        self.interval = '1mo'
-        self.ohcl = 'Close'
+        self.period = period
+        self.interval = interval
+        self.ohcl = ohcl
         
         # create index
         self.index = dict()
         self.set_index('vti')
-        
-    def reload_ticks(self):
-        self.tickers = read_csv('./tickers.csv')
-        return
 
     def recalc_ticks(self):
         ticks = self.tickers['ticker'].to_list()
