@@ -10,11 +10,11 @@ def now():
 
 class TickerDaemon:
     # init
-    def __init__(self, period = '10y', interval = '1mo', ohcl = 'Adj Close') -> None:
+    def __init__(self, period = '10y', interval = '1mo', ohlc = 'Adj Close') -> None:
         # download params
         self.period = period
         self.interval = interval
-        self.ohcl = ohcl
+        self.ohlc = ohlc
         # index params
         self.index = 'vti'
         self.index_data = DataFrame()
@@ -33,7 +33,7 @@ class TickerDaemon:
         return f"""================= Ticker Daemon info =================
 period: {self.period}
 interval: {self.interval}
-OHCL: {self.ohcl}
+OHCL: {self.ohlc}
 index: {self.index}
 tickers: {self.tickers}
 ticker data (decimal): \n{concat([self.ticker_beta,self.ticker_return,self.ticker_variance])}
@@ -52,7 +52,7 @@ ticker data (decimal): \n{concat([self.ticker_beta,self.ticker_return,self.ticke
         print(f'cleared all tickers')
 
     def download_data(self):
-        data = yf.download(list(self.tickers)+[self.index],period=self.period,interval=self.interval)[self.ohcl].pct_change().dropna()
+        data = yf.download(list(self.tickers)+[self.index],period=self.period,interval=self.interval)[self.ohlc].pct_change().dropna()
         
         if data.empty:
             print(f'Failed download. See above for error info')
@@ -60,7 +60,7 @@ ticker data (decimal): \n{concat([self.ticker_beta,self.ticker_return,self.ticke
                 data = DataFrame()
                 temp = DataFrame()
                 for _ in list(self.tickers)+[self.index]:
-                    temp = yf.download(_,period=self.period,interval=self.interval)[self.ohcl].pct_change().dropna()
+                    temp = yf.download(_,period=self.period,interval=self.interval)[self.ohlc].pct_change().dropna()
                     data[_.upper()] = temp
             else:
                 return
@@ -78,7 +78,7 @@ ticker data (decimal): \n{concat([self.ticker_beta,self.ticker_return,self.ticke
         end: str
          Download end date string (YYYY-MM-DD) or _datetime. Default is now
         """
-        data = yf.download(list(self.tickers)+[self.index],start=start,end=end)[self.ohcl].pct_change().dropna()
+        data = yf.download(list(self.tickers)+[self.index],start=start,end=end)[self.ohlc].pct_change().dropna()
         
         if data.empty:
             print(f'Failed download. See above for error info')
@@ -86,7 +86,7 @@ ticker data (decimal): \n{concat([self.ticker_beta,self.ticker_return,self.ticke
                 data = DataFrame()
                 temp = DataFrame()
                 for _ in list(self.tickers)+[self.index]:
-                    temp = yf.download(_,start,end)[self.ohcl].pct_change().dropna()
+                    temp = yf.download(_,start,end)[self.ohlc].pct_change().dropna()
                     data[_.upper()] = temp
             else:
                 return
