@@ -2,7 +2,7 @@ import yfinance as yf
 from pandas import Timestamp, DataFrame, concat
 from sklearn.linear_model import LinearRegression
 from numpy import array
-from matplotlib import pyplot
+from pickle import load, dump
 
 def now():
     "Returns pandas.Timestamp.now('US/Eastern')"
@@ -140,6 +140,9 @@ ticker data (decimal): \n{concat([self.ticker_beta,self.ticker_return,self.ticke
 
         print('betas solved')
 
+    def save(self):
+        dump(self,open('./Conf/TickerDaemon.conf','wb'))
+
 if __name__ == '__main__':
     td = TickerDaemon()
     
@@ -163,3 +166,4 @@ if __name__ == '__main__':
     td.calc_beta()
     
     print(td)
+    td.save()
