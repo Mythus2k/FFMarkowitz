@@ -33,7 +33,7 @@ class TickerDaemon:
         return f"""================= Ticker Daemon info =================
 period: {self.period}
 interval: {self.interval}
-OHCL: {self.ohlc}
+OHLC: {self.ohlc}
 index: {self.index}
 tickers: {self.tickers}
 ticker data (decimal): \n{concat([self.ticker_beta,self.ticker_return,self.ticker_variance])}
