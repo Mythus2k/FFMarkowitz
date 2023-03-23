@@ -3,18 +3,22 @@ from pandas import Timestamp, DataFrame, concat
 from sklearn.linear_model import LinearRegression
 from numpy import array
 from pickle import load, dump
+from math import sqrt
+import random
 
 def now():
     "Returns pandas.Timestamp.now('US/Eastern')"
     return Timestamp.now('US/Eastern')
 
-class TickerDaemon:
+class PtfDaemon:
     # init
-    def __init__(self, period = '10y', interval = '1mo', ohlc = 'Adj Close') -> None:
+    def __init__(self, period = '10y', interval = '1mo', risk_free = '^TNX', ohlc = 'Adj Close') -> None:
         # download params
         self.period = period
         self.interval = interval
         self.ohlc = ohlc
+        # risk free params
+        self.set_risk_free_rate(risk_free)
         # index params
         self.index = 'vti'
         self.index_data = DataFrame()
@@ -26,18 +30,28 @@ class TickerDaemon:
         self.ticker_return = DataFrame()
         self.ticker_variance = DataFrame()
         self.ticker_beta = DataFrame()
+        # solver params
+        self.weights = DataFrame()
+        self.ptf_return = float()
+        self.ptf_variance = float()
+        self.covariance_matrix = DataFrame()
 
         print(f'TickerDaemon ready')
 
     def __str__(self):
-        return f"""================= Ticker Daemon info =================
-period: {self.period}
-interval: {self.interval}
-OHLC: {self.ohlc}
-index: {self.index}
-tickers: {self.tickers}
-ticker data (decimal): \n{concat([self.ticker_beta,self.ticker_return,self.ticker_variance])}
-====================== End Info ======================"""
+        string =  f"\n================= Ticker Daemon info =================\n"
+        string += f"period: {self.period}\n"
+        string += f"interval: {self.interval}\n"
+        string += f"OHLC: {self.ohlc}\n"
+        string += f"index: {self.index}\n"
+        string += f"risk free: {self.risk_free}\n"
+        string += f"risk free rate: {self.risk_free_rate:.2%}\n"
+        string += f"ptf return: {self.ptf_return:.2%}\n"
+        string += f"ptf std: {sqrt(self.ptf_variance):.2%}\n"
+        string += f"ptf weights (as decimal): \n{self.weights}\n"
+        string += f"tickers (as decimal): \n{concat([self.ticker_beta,self.ticker_return,self.ticker_variance])}\n"
+        string += f"====================== End Info ======================\n"
+        return string
 
     def add_ticker(self, ticker):
         self.tickers.add(ticker.upper())
@@ -110,7 +124,8 @@ ticker data (decimal): \n{concat([self.ticker_beta,self.ticker_return,self.ticke
         self.index_return = out.pop(self.index.upper())
         self.ticker_return = out
 
-        print('Expected returns solved')
+        print('Expected returns solved: ')
+        print(self.ticker_return)
 
     def calc_variance(self):
         out = DataFrame()
@@ -124,7 +139,8 @@ ticker data (decimal): \n{concat([self.ticker_beta,self.ticker_return,self.ticke
         self.index_variance = out.pop(self.index.upper())
         self.ticker_variance = out
 
-        print('Variances solved')
+        print('Variances solved: ')
+        print(self.ticker_variance)
 
     def calc_beta(self):
         # beta = LinearRegression().fit(bdata[['x']],bdata[['y']]).coef_[0][0]
@@ -138,24 +154,89 @@ ticker data (decimal): \n{concat([self.ticker_beta,self.ticker_return,self.ticke
         out.index = ['Beta']
         self.ticker_beta = out
 
-        print('betas solved')
+        print('betas solved: ')
+        print(self.ticker_beta)
+
+    def set_risk_free_rate(self,ticker,date=-1):
+        """
+        ticks must be:
+            "^IRX" - 13 weeks
+            "^FVX" -  5 year
+            "^TNX" - 10 year
+            "^TYX" - 30 year
+        date : any
+            date formate (YYYY-MM-DD)
+        """
+        self.risk_free = ticker
+        self.risk_free_rate = yf.download(ticker,period=self.period,interval=self.interval)['Adj Close'][date]/100
+        print(f"Risk free set to {self.risk_free} with a rate of {self.risk_free_rate:.2%}")
+
+    def solve(self,runs=2_000,step=.0001):
+        # set up weights
+        weights = [random.random() for _ in range(len(self.tickers))]
+        self.weights['Start Weights'] = [w / sum(weights) for w in weights]
+        # self.weights['Start Weights'] = [.2,.2,.2,.2,.2] # Set weights for testing purposes
+
+        # Prep output weights
+        self.weights['Weights'] = self.weights['Start Weights']
+        self.weights.index = self.tickers
+        
+        for _ in range(runs):
+            # solve covariance matrix
+            covariance_matrix = DataFrame()
+            for tick in self.tickers:
+                temp = list()
+                for tick_ in self.tickers:
+                    covar = self.ticker_beta[tick]['Beta'] * self.ticker_beta[tick_]['Beta'] * self.index_variance['Variance']
+                    temp.append(self.weights['Weights'][tick] * self.weights['Weights'][tick_] * covar)
+                covariance_matrix[tick] = temp
+
+            covariance_matrix.index = self.tickers
+            covariance_matrix = covariance_matrix.sum().sort_values()
+
+            # update weight multiplier
+            weight_update = self.weights['Weights']
+            down_tick = covariance_matrix.index[0]
+            up_tick = covariance_matrix.index[-1]
+            weight_update[down_tick] = weight_update[down_tick] -step
+            weight_update[up_tick] = weight_update[up_tick] + step
+            
+            # leverage check
+            if weight_update.min() < 0:
+                print(weight_update)
+                print(f"Going into negative weights - ending run")
+                break
+        
+            # outputs
+            self.weights['Weights'] = weight_update
+            self.ptf_return = (self.ticker_return.T['Return'] * self.weights['Weights']).sum()
+            self.ptf_variance = covariance_matrix.sum()
+
+            # intermitten checking
+            if _ % 200 == 0:
+                print(f"run {_}/{runs}")
+                print(f"ptf return: {self.ptf_return:.2%}")
+                print(f"ptf std: {sqrt(self.ptf_variance):.2%}")
+                print(f"ptf weights: \n{self.weights}")
+                print(f"===== End Check =====\n")
 
     def save(self):
-        dump(self,open('./Conf/TickerDaemon.conf','wb'))
+        dump(self,open('./Conf/ptf_Daemon.conf','wb'))
 
 if __name__ == '__main__':
-    td = TickerDaemon()
+    td = PtfDaemon(risk_free='^IRX')
     
     td.period = '10y'
-    td.interval = '3mo'
+    td.interval = '1mo'
     td.index = 'vti'
 
-    print(td)
+    # print(td)
 
     td.add_ticker('bac')
     td.add_ticker('xom')
     td.add_ticker('tsla')
     td.add_ticker('meta')
+    td.add_ticker('v')
 
     td.download_data()
 
@@ -164,6 +245,12 @@ if __name__ == '__main__':
     td.calc_variance()
 
     td.calc_beta()
+
+    td.solve()
+
+    print(f"ptf return: {td.ptf_return:.2%}")
+    print(f"ptf std: {sqrt(td.ptf_variance):.2%}")
+    print(f"ptf weights: \n{td.weights}")
     
-    print(td)
+    # print(td)
     td.save()
