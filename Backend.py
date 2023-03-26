@@ -23,7 +23,7 @@ class PtfDaemon:
         # risk free params
         self.set_risk_free_rate(risk_free)
         # index params
-        self.index = 'vti'
+        self.index = 'VTI'
         self.index_data = DataFrame()
         self.index_return = DataFrame()
         self.index_variance = DataFrame()
@@ -69,7 +69,10 @@ class PtfDaemon:
         print(f'cleared all tickers')
 
     def download_data(self):
-        data = yf.download(list(self.tickers)+[self.index],period=self.period,interval=self.interval)[self.ohlc].pct_change().dropna()
+        data = yf.download(list(self.tickers)+[self.index],period=self.period,interval=self.interval)[self.ohlc].dropna().pct_change().dropna()[:-1]
+        # print(data.describe())
+        # print(data.cov())
+        # exit()
         
         if data.empty:
             print(f'Failed download. See above for error info')
@@ -174,58 +177,106 @@ class PtfDaemon:
         self.risk_free_rate = yf.download(ticker,period=self.period,interval=self.interval)['Adj Close'][date]/100
         print(f"Risk free set to {self.risk_free} with a rate of {self.risk_free_rate:.2%}")
 
-    def solve(self,runs=2_000,step=.0001):
-        # set up weights
-        weights = [round(random.random(),4) for _ in range(len(self.tickers))]
-        self.weights['Start Weights'] = [w / sum(weights) for w in weights]
-        # self.weights['Start Weights'] = [.2,.2,.2,.2,.2] # Set weights for testing purposes
+    def solve_cov_matrix(self, weights_frame):
+        covariance_matrix = self.ticker_data.drop(self.index.upper(),axis='columns').cov()
+        for tick in covariance_matrix.index:
+            col = list()
+            for tick_ in covariance_matrix.index:
+                col.append(weights_frame[tick] * weights_frame[tick_] * covariance_matrix[tick][tick_])
+            covariance_matrix[tick] = col
 
-        # Prep output weights
-        self.weights['Weights'] = self.weights['Start Weights']
-        self.weights.index = self.tickers
+        return covariance_matrix
+
+    def weights_updater(self, covariance_matrix,update_range=5):
+        # set up data
+        weight_update = self.weights['Weights']
+        covariance_matrix = covariance_matrix.sum().sort_values()
         
+        # Create a dataframe to to use to make updating decisions
+        df = concat((covariance_matrix,weight_update),axis=1)
+        df.columns = ['Covar','Weights']
+        df['Index'] = [_ for _ in range(len(df))]
+
+        # randomly decrease bottom half, randomly increase top half
+        weights = df['Weights'].to_dict()
+        for tick in weights.keys():
+            if df['Index'][tick] < len(df)/2:
+                weights[tick] = weights[tick] * (random.randrange(100-update_range,100)/100)
+            else:
+                weights[tick] = weights[tick] * (random.randrange(100,100+update_range)/100)
+        df['Weights'] = weights.values()
+
+        # Normalize weights to sum to 100
+        df['Weights'] = [w / df['Weights'].sum() for w in df['Weights']]
+
+        # Add minimum weights to zero out stocks - current system will never reach zero
+        # don't really need yet?
+        
+        # return only the weights as a DataFrame
+        return df['Weights']
+
+    def solve(self,runs=200):
+        # checks tracker
+        tracker_all = {'ret':list(),'var':list()}
+        tracker_used = {'ret':list(),'var':list()}
+
+        # set up weights
+        # weights = [round(random.random(),4) for _ in range(len(self.tickers))]
+        # self.weights['Weights'] = [w / sum(weights) for w in weights]
+        self.weights['Weights'] = [1/len(self.tickers) for _ in self.tickers] # Set weights for testing purposes
+        self.weights.index = self.tickers
+
+        # assign high value for variance comparision initalization
+        self.ptf_variance = 999
+
         for _ in range(runs):
             # solve covariance matrix
-            covariance_matrix = DataFrame()
-            for tick in self.tickers:
-                temp = list()
-                for tick_ in self.tickers:
-                    if tick != tick_:
-                        covar = self.ticker_beta[tick]['Beta'] * self.ticker_beta[tick_]['Beta'] * self.index_variance['Variance']
-                        temp.append(self.weights['Weights'][tick] * self.weights['Weights'][tick_] * covar)
-                    else:
-                        temp.append(self.ticker_variance[tick]['Variance'])
-                    
-                covariance_matrix[tick] = temp
-
-            covariance_matrix.index = self.tickers
-            covariance_matrix = covariance_matrix.sum().sort_values()
+            covariance_matrix = self.solve_cov_matrix(self.weights['Weights'])
 
             # update weights
-            weight_update = self.weights['Weights']
-            down_tick = covariance_matrix.index[0]
-            up_tick = covariance_matrix.index[-1]
-            weight_update[down_tick] = weight_update[down_tick] - step
-            weight_update[up_tick] = weight_update[up_tick] + step
+            weight_update = self.weights_updater(covariance_matrix)
             
-            # leverage check
-            if weight_update.min() < 0:
-                print(weight_update)
-                print(f"Going into negative weights - ending run")
-                break
-        
-            # outputs
-            self.weights['Weights'] = weight_update
-            self.ptf_return = (self.ticker_return.T['Return'] * self.weights['Weights']).sum()
-            self.ptf_variance = covariance_matrix.sum()
+            # Get new values
+            new_ret = (self.ticker_return.T['Return'] * weight_update).sum()
+            new_var = self.solve_cov_matrix(weight_update).sum().sum()
+
+            # check if return is improved
+            ret_check = new_ret > self.ptf_return
+
+            # check if variance is reduced
+            var_check = self.ptf_variance >= new_var
+
+            # check if return against variance has improved
+            comp_check = round(new_ret-self.ptf_return,5) > round(sqrt(new_var)-sqrt(self.ptf_variance),5)*1.8
+
+            # update outputs if improvement over previous position
+            # if ret_check or var_check:
+            if comp_check:
+                self.weights['Weights'] = weight_update
+                self.ptf_return = (self.ticker_return.T['Return'] * self.weights['Weights']).sum()
+                self.ptf_variance = covariance_matrix.sum().sum()
+                
+                # update the used list for plotting
+                tracker_used['ret'].append(self.ptf_return)
+                tracker_used['var'].append(self.ptf_variance)
+
+            # track all tested
+            tracker_all['ret'].append((self.ticker_return.T['Return'] * self.weights['Weights']).sum())
+            tracker_all['var'].append(covariance_matrix.sum().sum())
 
             # intermitten checking
-            if _ % 200 == 0:
+            if _ % int(runs/10)-1 == 0:
                 print(f"run {_}/{runs}")
+                print(f"comp_check: {new_ret-self.ptf_return > sqrt(new_var)-sqrt(self.ptf_variance):.2%}")
+                print(f"comp_check result: {comp_check}")
                 print(f"ptf return: {self.ptf_return:.2%}")
                 print(f"ptf std: {sqrt(self.ptf_variance):.2%}")
-                print(f"ptf weights: \n{self.weights}")
+                print(f"ptf weights:")
+                for tick in self.weights.index:
+                    print(f"{tick:6} : {self.weights['Weights'][tick]:.2%}")
                 print(f"===== End Check =====\n")
+
+        return tracker_all, tracker_used
 
     def save(self):
         dump(self,open('./Conf/ptf_Daemon.conf','wb'))
@@ -254,12 +305,16 @@ if __name__ == '__main__':
 
     td.calc_beta()
 
-    td.solve()
+    tracker_all, tracker_used = td.solve()
 
+    # data outputs
+    print('========================  Output  ==========================')
     print(f"ptf return: {td.ptf_return:.2%}")
     print(f"ptf std: {sqrt(td.ptf_variance):.2%}")
     print(f"Niave: {td.ticker_return.T.mean()['Return']:.2%}")
-    print(f"ptf weights: \n{td.weights['Weights']}")
+    print(f"ptf weights:")
+    for tick in td.weights.index:
+        print(f"{tick:5}: {td.weights['Weights'][tick]:.2%}")
 
     x = list()
     y = list()
@@ -267,9 +322,12 @@ if __name__ == '__main__':
         x.append(td.ticker_variance[_])
         y.append(td.ticker_return[_])
 
+    pyplot.plot(tracker_all['var'],tracker_all['ret'])
+    pyplot.plot(tracker_used['var'],tracker_used['ret'])
     pyplot.scatter(x,y)
     pyplot.scatter(td.ptf_variance,td.ptf_return)
     pyplot.show()
     
+
     # print(td)
     td.save()

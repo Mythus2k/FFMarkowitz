@@ -121,13 +121,9 @@ if __name__ == '__main__':
     m.add_ticker('bac')
     m.add_ticker('xom')
     m.add_ticker('tsla')
-    m.add_ticker('msft')
     m.add_ticker('meta')
+    m.add_ticker('msft')
     m.add_ticker('v')
-    m.add_ticker('himx')
-    m.add_ticker('gecc')
-    m.add_ticker('nhtc')
-    m.add_ticker('iep')
 
     m.download_market_data()
 
