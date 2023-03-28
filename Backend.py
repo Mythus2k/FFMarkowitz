@@ -21,7 +21,10 @@ class PtfDaemon:
         self.interval = interval
         self.ohlc = ohlc
         # risk free params
+        self.risk_free = str()
+        self.risk_free_rate = float()
         self.set_risk_free_rate(risk_free)
+        self.desired_return = 100
         # index params
         self.index = 'VTI'
         self.index_data = DataFrame()
@@ -37,7 +40,7 @@ class PtfDaemon:
         self.weights = DataFrame()
         self.ptf_return = float()
         self.ptf_variance = float()
-        self.ptf_rf_slope = float()
+        self.ptf_rf_slope = -999
         self.covariance_matrix = DataFrame()
 
         print(f'TickerDaemon ready')
@@ -50,6 +53,7 @@ class PtfDaemon:
         string += f"index: {self.index}\n"
         string += f"risk free: {self.risk_free}\n"
         string += f"risk free rate: {self.risk_free_rate:.2%}\n"
+        string += f"Desired return adjuster: {self.desired_return/100:.2%}"
         string += f"ptf return: {self.ptf_return:.2%}\n"
         string += f"ptf std: {sqrt(self.ptf_variance):.2%}\n"
         string += f"ptf weights (as decimal): \n{self.weights}\n"
@@ -81,8 +85,11 @@ class PtfDaemon:
                 data = DataFrame()
                 temp = DataFrame()
                 for _ in list(self.tickers)+[self.index]:
-                    temp = yf.download(_,period=self.period,interval=self.interval)[self.ohlc].pct_change().dropna()
-                    data[_.upper()] = temp
+                    temp = yf.download(_,period=self.period,interval=self.interval)[self.ohlc].dropna().pct_change().dropna()[:-1]
+                    if not temp.empty:
+                        data[_.upper()] = temp
+                    else:
+                        self.delete_ticker(_.upper())
             else:
                 return
         
@@ -99,7 +106,7 @@ class PtfDaemon:
         end: str
          Download end date string (YYYY-MM-DD) or _datetime. Default is now
         """
-        data = yf.download(list(self.tickers)+[self.index],start=start,end=end)[self.ohlc].pct_change().dropna()
+        data = yf.download(list(self.tickers)+[self.index],start=start,end=end)[self.ohlc].dropna().pct_change().dropna()[:-1]
         
         if data.empty:
             print(f'Failed download. See above for error info')
@@ -107,8 +114,11 @@ class PtfDaemon:
                 data = DataFrame()
                 temp = DataFrame()
                 for _ in list(self.tickers)+[self.index]:
-                    temp = yf.download(_,start,end)[self.ohlc].pct_change().dropna()
-                    data[_.upper()] = temp
+                    temp = yf.download(_,start,end)[self.ohlc].dropna().pct_change().dropna()[:-1]
+                    if not temp.empty:
+                        data[_.upper()] = temp
+                    else:
+                        self.delete_ticker(_.upper())
             else:
                 return
         
@@ -270,9 +280,8 @@ class PtfDaemon:
                 print(f"slope_check result: {slope_check}")
                 print(f"ptf return: {self.ptf_return:.2%}")
                 print(f"ptf std: {sqrt(self.ptf_variance):.2%}")
-                print(f"ptf weights:")
-                for tick in self.weights.index:
-                    print(f"{tick:6} : {self.weights['Weights'][tick]:.2%}")
+                print(f"ptf weights (top 10):")
+                print((td.weights['Weights']*100).sort_values(ascending=False).head(10))
                 print(f"===== End Check =====\n")
 
         return tracker_all, tracker_used
@@ -285,7 +294,7 @@ if __name__ == '__main__':
     
     td.period = '10y'
     td.interval = '1mo'
-    td.index = 'vti'
+    td.index = 'spy'
 
     # standard set
     # td.add_ticker('bac')
@@ -294,11 +303,26 @@ if __name__ == '__main__':
     # td.add_ticker('meta')
     # td.add_ticker('msft')
     # td.add_ticker('v')
+
+    # my ptf test
+    td.add_ticker('vti')
+    td.add_ticker('vxus')
+    td.add_ticker('ffrhx')
+    td.add_ticker('xle')
+    td.add_ticker('inda')
+    td.add_ticker('farmx')
+    td.add_ticker('fsdpx')
+    td.add_ticker('intc')
+    td.add_ticker('pick')
+    td.add_ticker('aapl')
+    td.add_ticker('meta')
+    td.add_ticker('umc')
+    td.add_ticker('wu')
     
-    # spy test - not working
-    spy = read_csv('spy.csv')
-    for tick in spy['Symbol'].sample(150):
-        td.add_ticker(tick)    
+    # spy test - working - some assets give really weird results, might not have full history
+    # spy = read_csv('spy.csv')
+    # for tick in spy['Symbol'].sample(300):
+    #     td.add_ticker(tick)    
 
     td.download_data()
 
@@ -317,9 +341,8 @@ if __name__ == '__main__':
     print(f"RF slope: {td.ptf_rf_slope:.5}")
     print(f"total updates: {len(tracker_used['ret'])}")
     print(f"Niave: {td.ticker_return.T.mean()['Return']:.2%}")
-    print(f"ptf weights:")
-    for tick in td.weights.index:
-        print(f"{tick:5}: {td.weights['Weights'][tick]:.2%}")
+    print(f"ptf weights (top 10):")
+    print((td.weights['Weights']*100).sort_values(ascending=False).head(10))
 
     x = list()
     y = list()
@@ -334,5 +357,5 @@ if __name__ == '__main__':
     pyplot.plot([0,td.ptf_variance],[td.risk_free_rate,td.ptf_return])
     pyplot.show()
 
-    # print(td)
+    print(td)
     td.save()
