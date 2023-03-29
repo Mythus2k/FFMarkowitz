@@ -53,10 +53,10 @@ class PtfDaemon:
         string += f"index: {self.index}\n"
         string += f"risk free: {self.risk_free}\n"
         string += f"risk free rate: {self.risk_free_rate:.2%}\n"
-        string += f"Desired return adjuster: {self.desired_return/100:.2%}"
+        string += f"Desired return adjuster: {self.desired_return/100:.2%}\n"
         string += f"ptf return: {self.ptf_return:.2%}\n"
         string += f"ptf std: {sqrt(self.ptf_variance):.2%}\n"
-        string += f"ptf weights (as decimal): \n{self.weights}\n"
+        string += f"ptf weights (as decimal): \n{self.weights.T}\n"
         string += f"tickers (as decimal): \n{concat([self.ticker_beta,self.ticker_return,self.ticker_variance])}\n"
         string += f"====================== End Info ======================\n"
         return string
