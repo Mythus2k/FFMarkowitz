@@ -24,7 +24,7 @@ class PtfDaemon:
         self.risk_free = str()
         self.risk_free_rate = float()
         self.set_risk_free_rate(risk_free)
-        self.desired_return = 100
+        self.risk_adjuster = 1
         # index params
         self.index = 'VTI'
         self.index_data = DataFrame()
@@ -53,7 +53,7 @@ class PtfDaemon:
         string += f"index: {self.index}\n"
         string += f"risk free: {self.risk_free}\n"
         string += f"risk free rate: {self.risk_free_rate:.2%}\n"
-        string += f"Desired return adjuster: {self.desired_return/100:.2%}\n"
+        string += f"Desired return adjuster: {self.risk_adjuster/100:.2%}\n"
         string += f"ptf return: {self.ptf_return:.2%}\n"
         string += f"ptf std: {sqrt(self.ptf_variance):.2%}\n"
         string += f"ptf weights (as decimal): \n{self.weights.T}\n"

@@ -2,6 +2,7 @@ from Backend import PtfDaemon
 import dearpygui.dearpygui as dpg
 from pickle import load
 from math import sqrt
+from pandas import DataFrame
 
 td = load(open('./Conf/ptf_Daemon.conf','rb'))
 print(td)
@@ -278,24 +279,94 @@ def calculation_window():
     
 # ======== graph 
 
+def efficient_line():
+    x_axis = list()
+    y_axis = list()
+
+    for x in [0,(sqrt(td.ptf_variance)*2)]:
+        x_axis.append(x)
+    for x in iter(x_axis):
+        y_axis.append(td.ptf_rf_slope*x + td.risk_free_rate)
+
+    return x_axis, y_axis
+
+def graph_window():
+    with dpg.plot(label="Optimizer Graph", height=320, width=420):
+        dpg.add_plot_axis(dpg.mvXAxis, label="Standard Deviation")
+        dpg.add_plot_axis(dpg.mvYAxis, label="Expected Return", tag="y_axis")
+
+        # Scatter of all positions
+        dpg.add_scatter_series(x=[sqrt(_) for _ in td.ticker_variance.T['Variance']],y=td.ticker_return.T['Return'].to_list(),label='tickers',parent='y_axis',tag='ticker_scatter')
+        
+        # Point for portfolio risk and return
+        dpg.add_scatter_series(x=[sqrt(td.ptf_variance)],y=td.ptf_return,label='ptf',parent='y_axis',tag='ptf_scatter')
+
+        # efficient line
+        x_series, y_series = efficient_line()
+        dpg.add_line_series(x=x_series,y=y_series,label='efficient',parent='y_axis',tag='efficient_line')
+
+        # point along efficient line
+        x_value = sqrt(td.ptf_variance) * td.risk_adjuster
+        y_value = td.ptf_rf_slope*x_value + td.risk_free_rate
+        dpg.add_scatter_series(x=[x_value],y=[y_value],label='risk level',parent='y_axis',tag='risk_level')
+
 # ======== weights and desired return
 
-# ======== Create window to display
-with dpg.window(tag='Primary Window'):
-    with dpg.group(horizontal=True):
-        with dpg.child_window(width=310):
-            inputs_window()
-            index_window()
-            treasury_window()
-        with dpg.group():
-            calculation_window()
-            with dpg.child_window():
-                add_ticker_window()
-                ticker_table_window()
+def weight_row_builder(tick, weight):
+    with dpg.table_row(tag= f'{tick}-weight_row',parent='weight_table'):
+        dpg.add_text(f"{tick}")
+        dpg.add_text(f"{weight:.2%}")
+
+def output_calc_controller(sender, app_data):
+    # if received from gui -> update ptf Daemon
+    if app_data != None:
+        td.risk_adjuster = app_data/100
+
+    # collect data
+    used_weights = td.weights['Weights'].sort_values(ascending=False)
+    risk_free = td.risk_adjuster
+
+    # update weights
+    used_weights = used_weights * risk_free
+    used_weights.T['Trsry'] = 1 - risk_free
+
+    for tick in used_weights.index:
+        dpg.delete_item(f'{tick}-weight_row')
+        weight_row_builder(tick, used_weights[tick])
+
+def desired_return_slider():
+    dpg.add_slider_float(label="Risk adjuster",
+                        tag='risk_slider',
+                        format='%.2f',
+                        callback= output_calc_controller,
+                        width=120)
+    
+    # add leveraging options here with input float that links to max value of slider?
+
+def weight_table_builder():
+    with dpg.table(tag='weight_table',header_row=True,policy=dpg.mvTable_SizingFixedFit,
+                   freeze_rows=1):
+        dpg.add_table_column(label='Ticker')
+        dpg.add_table_column(label='Weight')
+
+        output_calc_controller(None,None)
+
+def output_window():
+    with dpg.group():
+        desired_return_slider()
+
+        weight_table_builder()
 
 # ======== Other Gui elements to run
 # create viewport
-dpg.create_viewport(title='Optimal Portfolio Solver', width=720, height=600)
+dpg.create_viewport(title='Optimal Portfolio Solver', width=720, height=600,
+                    #small_icon=None,large_icon=None,
+                    )
+
+# ======== Create window to display
+with dpg.window(tag='Primary Window'):
+    graph_window()
+    desired_return_slider()
 
 # setup and show
 dpg.setup_dearpygui()
