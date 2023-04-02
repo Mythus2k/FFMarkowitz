@@ -281,7 +281,7 @@ class PtfDaemon:
                 print(f"ptf return: {self.ptf_return:.2%}")
                 print(f"ptf std: {sqrt(self.ptf_variance):.2%}")
                 print(f"ptf weights (top 10):")
-                print((td.weights['Weights']*100).sort_values(ascending=False).head(10))
+                print((self.weights['Weights']*100).sort_values(ascending=False).head(10))
                 print(f"===== End Check =====\n")
 
         return tracker_all, tracker_used

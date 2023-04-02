@@ -10,11 +10,9 @@ print(td)
 dpg.create_context()
 
 # ======== change period, interval, OHLC
-# set the ohlc
 def set_ohlc(sender, app_data):
     td.ohlc = app_data
 
-# add OHLC options
 def ohlc_window():
     dpg.add_combo(items = ['Open','High','Low','Close','Adj Close'],
                 label = 'OHLC options',
@@ -23,11 +21,9 @@ def ohlc_window():
                 default_value= td.ohlc,
                 width = 90)
 
-# set the period
 def set_period(sender, app_data):
     td.period = app_data
 
-# add period options
 def period_window():
     dpg.add_combo(items = ['10y','5y','2y','1y','ytd','6mo','3mo','1mo','5d','1d'],
                 label = 'Period options',
@@ -35,12 +31,10 @@ def period_window():
                 callback = set_period,
                 default_value= td.period,
                 width = 50)
-    
-# set the interval
+
 def set_interval(sender, app_data):
     td.interval = app_data
 
-# add interval options
 def interval_window():    
     dpg.add_combo(items = ['3mo','1mo','1wk','5d','1d','1h','90m','60m','30m','15m','5m','2m','1m'],
                 label = 'Interval options',
@@ -49,7 +43,6 @@ def interval_window():
                 default_value= td.interval,
                 width = 50)
 
-# create a group for this category
 def inputs_window():
     with dpg.group(label='inputs',tag='inputs_window'):
         ohlc_window()
@@ -76,7 +69,6 @@ def index_window():
                         width = 60)
 
 # ======== change risk free
-# set treasury rate
 def set_treasury(sender, app_data):
     if app_data == '13 week':
         td.set_risk_free_rate('^IRX')
@@ -89,7 +81,6 @@ def set_treasury(sender, app_data):
 
     dpg.configure_item('treasury_rate', default_value=f"Rate: {td.risk_free_rate:.2%}")
 
-# find the starting treasury
 def treasury_default(tick):
     if tick == '^IRX':
         return '13 week'
@@ -100,7 +91,6 @@ def treasury_default(tick):
     if tick == '^TYX':
         return '30 year'
 
-# create the treasury window
 def treasury_window():
     with dpg.table(header_row=False,policy=dpg.mvTable_SizingFixedFit,
                    borders_innerV=True,borders_outerV=False,
@@ -153,7 +143,7 @@ def add_ticker(sender, app_data):
     build_ticker_row(tick)
 
     dpg.configure_item('add_ticker_input',default_value='',hint='tick')
-
+    
 def delete_ticker(sender, app_data, user_data):    
     td.delete_ticker(user_data)
     dpg.delete_item((f"{user_data}").upper()+"-row")
@@ -254,6 +244,9 @@ def calc_all_controller():
     td.calc_beta()
     td.calc_variance()
     
+    # Scatter of all positions
+    dpg.configure_item('ticker_scatter',x=[sqrt(_) for _ in td.ticker_variance.T['Variance']],y=td.ticker_return.T['Return'].to_list())
+    
     for tick in td.tickers:
         dpg.configure_item(f"{tick}-return",default_value=f"{td.ticker_return[tick]['Return']:.2%}")
         dpg.configure_item(f"{tick}-beta",default_value=f"{td.ticker_beta[tick]['Beta']:.2}")
@@ -271,9 +264,9 @@ def calc_all():
                            callback=calc_all_controller)
 
 def calculation_window():
-    with dpg.group():
+    with dpg.child_window(width=250,height=80):
         with dpg.collapsing_header(label='Individual Calculations',
-                                tag = 'individual_calc_collapsing'):
+                                   tag = 'individual_calc_collapsing'):
             individual_calcs()
         calc_all()
     
@@ -321,6 +314,11 @@ def output_calc_controller(sender, app_data):
     # if received from gui -> update ptf Daemon
     if app_data != None:
         td.risk_adjuster = app_data/100
+        
+        # graph updates
+        x_value = sqrt(td.ptf_variance) * td.risk_adjuster
+        y_value = td.ptf_rf_slope*x_value + td.risk_free_rate
+        dpg.configure_item('risk_level',x = [x_value],y = [y_value])
 
     # collect data
     used_weights = td.weights['Weights'].sort_values(ascending=False)
@@ -339,9 +337,21 @@ def desired_return_slider():
                         tag='risk_slider',
                         format='%.2f',
                         callback= output_calc_controller,
-                        width=120)
+                        width=120,
+                        default_value=td.risk_adjuster*100)
+    
     
     # add leveraging options here with input float that links to max value of slider?
+
+def calc_weights_controller():
+    td.solve()
+
+def calc_weights_button():
+    with dpg.group(horizontal=True):
+        dpg.add_text('Solve Weights:')
+        dpg.add_button(label='Calculate',
+                       tag = 'calc_weight_button',
+                       callback=calc_weights_controller)
 
 def weight_table_builder():
     with dpg.table(tag='weight_table',header_row=True,policy=dpg.mvTable_SizingFixedFit,
@@ -353,20 +363,46 @@ def weight_table_builder():
 
 def output_window():
     with dpg.group():
-        desired_return_slider()
+        with dpg.group(horizontal=False):
+            desired_return_slider()
+            calc_weights_button()
 
         weight_table_builder()
 
 # ======== Other Gui elements to run
 # create viewport
-dpg.create_viewport(title='Optimal Portfolio Solver', width=720, height=600,
+dpg.create_viewport(title='Optimal Portfolio Solver', width=720, height=650,
                     #small_icon=None,large_icon=None,
+                    # clear_color=[255,255,255,0],
                     )
 
 # ======== Create window to display
+
+#   Windows:
+    # output_window
+    # graph_window
+    # calculation_window
+    # ticker_table_window   Y
+    # add_ticker_window     Y
+    # treasury_window       Y
+    # index_window          Y
+    # inputs_window         Y
+
 with dpg.window(tag='Primary Window'):
-    graph_window()
-    desired_return_slider()
+    with dpg.group(horizontal=True):
+        with dpg.group():
+            inputs_window()
+            treasury_window()
+            index_window()
+            calculation_window()
+        with dpg.group():
+            add_ticker_window()
+            ticker_table_window()
+    with dpg.group(horizontal=True):
+        graph_window()
+        output_window()
+
+
 
 # setup and show
 dpg.setup_dearpygui()
