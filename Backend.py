@@ -1,11 +1,11 @@
 import random
 from math import sqrt
-from pickle import dump, load
+from pickle import dump
 
 import yfinance as yf
 from matplotlib import pyplot
 from numpy import array
-from pandas import DataFrame, Timestamp, concat, read_csv
+from pandas import DataFrame, Timestamp, concat
 from sklearn.linear_model import LinearRegression
 
 
@@ -198,9 +198,9 @@ class PtfDaemon:
 
         return covariance_matrix
 
-    def weights_updater(self, covariance_matrix,update_range=5):
+    def weights_updater(self,weight_frame,covariance_matrix,update_range=5):
         # set up data
-        weight_update = self.weights['Weights']
+        weight_update = weight_frame['Weights']
         covariance_matrix = covariance_matrix.sum().sort_values()
         
         # randomize the matrix
@@ -232,21 +232,28 @@ class PtfDaemon:
         tracker_all = {'ret':list(),'var':list()}
         tracker_used = {'ret':list(),'var':list()}
 
+        # Funciton variables
+        weights = DataFrame()
+        ptf_variance = 999
+        ptf_return = 0
+        ptf_rf_slope = 0
+
+
         # set up weights
         # weights = [round(random.random(),4) for _ in range(len(self.tickers))]  # Random weights
         # self.weights['Weights'] = [w / sum(weights) for w in weights]           # Random weights
-        self.weights['Weights'] = [1/len(self.tickers) for _ in self.tickers]     # Niave weights 
-        self.weights.index = self.tickers
+        weights['Weights'] = [1/len(self.tickers) for _ in self.tickers]     # Niave weights 
+        weights.index = self.tickers
 
         # assign high value for variance comparision initalization
         self.ptf_variance = 999
 
         for _ in range(runs):
             # solve covariance matrix
-            covariance_matrix = self.solve_cov_matrix(self.weights['Weights'])
+            covariance_matrix = self.solve_cov_matrix(weights['Weights'])
 
             # update weights
-            weight_update = self.weights_updater(covariance_matrix,weight_adjust)
+            weight_update = self.weights_updater(weights,covariance_matrix,weight_adjust)
             
             # Get new values
             new_ret = (self.ticker_return.T['Return'] * weight_update).sum()
@@ -254,35 +261,40 @@ class PtfDaemon:
 
             # rf_slope_check
             slope = ((self.risk_free_rate - new_ret)/(0 - sqrt(new_var))) - self.risk_free_rate
-            slope_check = slope > self.ptf_rf_slope            
+            slope_check = slope > ptf_rf_slope            
 
             # update outputs if improvement over previous position
             # if ret_check or var_check:
             if slope_check:
-                self.weights['Weights'] = weight_update
-                self.ptf_return = (self.ticker_return.T['Return'] * self.weights['Weights']).sum()
-                self.ptf_variance = covariance_matrix.sum().sum()
-                self.ptf_rf_slope = (self.risk_free_rate - self.ptf_return) / (0 - sqrt(self.ptf_variance))
+                weights['Weights'] = weight_update
+                ptf_return = (self.ticker_return.T['Return'] * weights['Weights']).sum()
+                ptf_variance = covariance_matrix.sum().sum()
+                ptf_rf_slope = (self.risk_free_rate - ptf_return) / (0 - sqrt(ptf_variance))
                 
                 # update the used list for plotting
-                tracker_used['ret'].append(self.ptf_return)
-                tracker_used['var'].append(self.ptf_variance)
+                tracker_used['ret'].append(ptf_return)
+                tracker_used['var'].append(ptf_variance)
 
             # track all tested
-            tracker_all['ret'].append((self.ticker_return.T['Return'] * self.weights['Weights']).sum())
+            tracker_all['ret'].append((self.ticker_return.T['Return'] * weights['Weights']).sum())
             tracker_all['var'].append(covariance_matrix.sum().sum())
 
             # intermitten checking
             if _ % int(runs/10)-1 == 0:
                 print(f"run {_}/{runs}")
-                print(f"old slope: {self.ptf_rf_slope:.5}")
+                print(f"old slope: {ptf_rf_slope:.5}")
                 print(f"new slope: {slope:.5}")
                 print(f"slope_check result: {slope_check}")
-                print(f"ptf return: {self.ptf_return:.2%}")
-                print(f"ptf std: {sqrt(self.ptf_variance):.2%}")
+                print(f"ptf return: {ptf_return:.2%}")
+                print(f"ptf std: {sqrt(ptf_variance):.2%}")
                 print(f"ptf weights (top 10):")
-                print((self.weights['Weights']*100).sort_values(ascending=False).head(10))
+                print((weights['Weights']*100).sort_values(ascending=False).head(10))
                 print(f"===== End Check =====\n")
+
+        self.weights = weights
+        self.ptf_variance = ptf_variance
+        self.ptf_return = ptf_return
+        self.ptf_rf_slope = ptf_rf_slope
 
         return tracker_all, tracker_used
 

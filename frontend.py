@@ -310,7 +310,7 @@ def weight_row_builder(tick, weight):
         dpg.add_text(f"{tick}")
         dpg.add_text(f"{weight:.2%}")
 
-def output_calc_controller(sender, app_data):
+def risk_adjust_calc(sender, app_data):
     # if received from gui -> update ptf Daemon
     if app_data != None:
         td.risk_adjuster = app_data/100
@@ -319,6 +319,11 @@ def output_calc_controller(sender, app_data):
         x_value = sqrt(td.ptf_variance) * td.risk_adjuster
         y_value = td.ptf_rf_slope*x_value + td.risk_free_rate
         dpg.configure_item('risk_level',x = [x_value],y = [y_value])
+
+        # value print updates
+        dpg.configure_item('ptf_ret_text',default_value=f"Return: {(td.ptf_return * td.risk_adjuster) + (td.risk_free_rate * (1-td.risk_adjuster)):.2%}")
+        dpg.configure_item('ptf_var_text',default_value= f"Std. Dev.: {sqrt(td.ptf_variance) * td.risk_adjuster:.2%}")
+
 
     # collect data
     used_weights = td.weights['Weights'].sort_values(ascending=False)
@@ -336,7 +341,7 @@ def desired_return_slider():
     dpg.add_slider_float(label="Risk adjuster",
                         tag='risk_slider',
                         format='%.2f',
-                        callback= output_calc_controller,
+                        callback= risk_adjust_calc,
                         width=120,
                         default_value=td.risk_adjuster*100)
     
@@ -344,7 +349,23 @@ def desired_return_slider():
     # add leveraging options here with input float that links to max value of slider?
 
 def calc_weights_controller():
+    # download and update data
+    td.download_data()
+    td.calc_returns()
+    td.calc_variance()
+    td.calc_beta()
+
+    # update displays before solving
+    for tick in td.tickers:
+        dpg.configure_item(f"{tick}-return",default_value=f"{td.ticker_return[tick]['Return']:.2%}")
+        dpg.configure_item(f"{tick}-beta",default_value=f"{td.ticker_beta[tick]['Beta']:.2}")
+        dpg.configure_item(f"{tick}-std",default_value=f"{sqrt(td.ticker_variance[tick]['Variance']):.2%}")
+
+    dpg.configure_item('ticker_scatter',x=[sqrt(_) for _ in td.ticker_variance.T['Variance']],y=td.ticker_return.T['Return'].to_list())
+
     td.solve()
+
+    risk_adjust_calc(None,None)
 
 def calc_weights_button():
     with dpg.group(horizontal=True):
@@ -355,11 +376,11 @@ def calc_weights_button():
 
 def weight_table_builder():
     with dpg.table(tag='weight_table',header_row=True,policy=dpg.mvTable_SizingFixedFit,
-                   freeze_rows=1):
+                   freeze_rows=1,height=250,scrollY=True):
         dpg.add_table_column(label='Ticker')
         dpg.add_table_column(label='Weight')
 
-        output_calc_controller(None,None)
+        risk_adjust_calc(None,None)
 
 def output_window():
     with dpg.group():
@@ -368,6 +389,16 @@ def output_window():
             calc_weights_button()
 
         weight_table_builder()
+
+# ======= show return, variance, other
+
+def portfolio_values_window():
+    with dpg.child_window(width=200,height=80,no_scrollbar=True):
+        dpg.add_text(f"Portfolio Results:")
+        dpg.add_text(default_value= f"Return: {(td.ptf_return * td.risk_adjuster) + (td.risk_free_rate * (1-td.risk_adjuster)):.2%}",
+                     tag='ptf_ret_text')
+        dpg.add_text(default_value= f"Std. Dev.: {sqrt(td.ptf_variance) * td.risk_adjuster:.2%}",
+                     tag='ptf_var_text')
 
 # ======== Other Gui elements to run
 # create viewport
@@ -381,12 +412,12 @@ dpg.create_viewport(title='Optimal Portfolio Solver', width=720, height=650,
 #   Windows:
     # output_window
     # graph_window
-    # calculation_window
-    # ticker_table_window   Y
-    # add_ticker_window     Y
-    # treasury_window       Y
-    # index_window          Y
-    # inputs_window         Y
+    # calculation_window    
+    # ticker_table_window   
+    # add_ticker_window     
+    # treasury_window       
+    # index_window          
+    # inputs_window         
 
 with dpg.window(tag='Primary Window'):
     with dpg.group(horizontal=True):
@@ -394,14 +425,14 @@ with dpg.window(tag='Primary Window'):
             inputs_window()
             treasury_window()
             index_window()
-            calculation_window()
+            portfolio_values_window()
+            # calculation_window()  # Kinda useless
         with dpg.group():
             add_ticker_window()
             ticker_table_window()
     with dpg.group(horizontal=True):
         graph_window()
         output_window()
-
 
 
 # setup and show
