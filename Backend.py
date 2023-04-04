@@ -5,7 +5,7 @@ from pickle import dump
 import yfinance as yf
 from matplotlib import pyplot
 from numpy import array
-from pandas import DataFrame, Timestamp, concat
+from pandas import DataFrame, Timestamp, concat, read_csv
 from sklearn.linear_model import LinearRegression
 
 
@@ -201,7 +201,7 @@ class PtfDaemon:
     def weights_updater(self,weight_frame,covariance_matrix,update_range=5):
         # set up data
         weight_update = weight_frame['Weights']
-        covariance_matrix = covariance_matrix.sum().sort_values()
+        covariance_matrix = covariance_matrix.sum().sort_values()        
         
         # randomize the matrix
         covariance_matrix = covariance_matrix.sample(len(covariance_matrix))
@@ -216,8 +216,12 @@ class PtfDaemon:
         for tick in weights.keys():
             if df['Index'][tick] < len(df)/2:
                 weights[tick] = weights[tick] * (random.randrange(100-update_range,100)/100)
+                # Testing
+                # weights[tick] = weights[tick] * (random.randrange(1,20)/100)
             else:
                 weights[tick] = weights[tick] * (random.randrange(100,100+update_range)/100)
+                # Testing
+                # weights[tick] = weights[tick] * (random.randrange(170,199)/100)
         
         df['Weights'] = weights.values()
 
@@ -232,21 +236,17 @@ class PtfDaemon:
         tracker_all = {'ret':list(),'var':list()}
         tracker_used = {'ret':list(),'var':list()}
 
-        # Funciton variables
+        # Function variables
         weights = DataFrame()
         ptf_variance = 999
         ptf_return = 0
         ptf_rf_slope = 0
 
-
         # set up weights
-        # weights = [round(random.random(),4) for _ in range(len(self.tickers))]  # Random weights
-        # self.weights['Weights'] = [w / sum(weights) for w in weights]           # Random weights
-        weights['Weights'] = [1/len(self.tickers) for _ in self.tickers]     # Niave weights 
+        rand_weight = [round(random.random(),4) for _ in range(len(self.tickers))]  # Random weights
+        weights['Weights'] = [w / sum(rand_weight) for w in rand_weight]           # Random weights
+        # weights['Weights'] = [1/len(self.tickers) for _ in self.tickers]     # Niave weights 
         weights.index = self.tickers
-
-        # assign high value for variance comparision initalization
-        self.ptf_variance = 999
 
         for _ in range(runs):
             # solve covariance matrix
@@ -317,24 +317,24 @@ if __name__ == '__main__':
     # td.add_ticker('v')
 
     # my ptf test
-    td.add_ticker('vti')
-    td.add_ticker('vxus')
-    td.add_ticker('ffrhx')
-    td.add_ticker('xle')
-    td.add_ticker('inda')
-    td.add_ticker('farmx')
-    td.add_ticker('fsdpx')
-    td.add_ticker('intc')
-    td.add_ticker('pick')
-    td.add_ticker('aapl')
-    td.add_ticker('meta')
-    td.add_ticker('umc')
-    td.add_ticker('wu')
+    # td.add_ticker('vti')
+    # td.add_ticker('vxus')
+    # td.add_ticker('ffrhx')
+    # td.add_ticker('xle')
+    # td.add_ticker('inda')
+    # td.add_ticker('farmx')
+    # td.add_ticker('fsdpx')
+    # td.add_ticker('intc')
+    # td.add_ticker('pick')
+    # td.add_ticker('aapl')
+    # td.add_ticker('meta')
+    # td.add_ticker('umc')
+    # td.add_ticker('wu')
     
     # spy test - working - some assets give really weird results, might not have full history
-    # spy = read_csv('spy.csv')
-    # for tick in spy['Symbol'].sample(300):
-    #     td.add_ticker(tick)    
+    spy = read_csv('spy.csv')
+    for tick in spy['Symbol'].sample(20):
+        td.add_ticker(tick)    
 
     td.download_data()
 

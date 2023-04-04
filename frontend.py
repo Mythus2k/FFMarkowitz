@@ -147,6 +147,7 @@ def add_ticker(sender, app_data):
 def delete_ticker(sender, app_data, user_data):    
     td.delete_ticker(user_data)
     dpg.delete_item((f"{user_data}").upper()+"-row")
+    dpg.delete_item(f'{user_data}-weight_row')
 
 def add_ticker_window():
     with dpg.table(header_row=False, policy=dpg.mvTable_SizingFixedFit):
@@ -326,12 +327,15 @@ def risk_adjust_calc(sender, app_data):
 
 
     # collect data
-    used_weights = td.weights['Weights'].sort_values(ascending=False)
+    used_weights = td.weights['Weights']
     risk_free = td.risk_adjuster
 
     # update weights
     used_weights = used_weights * risk_free
     used_weights.T['Trsry'] = 1 - risk_free
+
+    used_weights = used_weights.sort_values(ascending=False)
+    # print(used_weights)
 
     for tick in used_weights.index:
         dpg.delete_item(f'{tick}-weight_row')
@@ -365,6 +369,22 @@ def calc_weights_controller():
 
     td.solve()
 
+    # efficient line
+    x_series, y_series = efficient_line()
+    dpg.configure_item('efficient_line',x=x_series,y=y_series,label='efficient',parent='y_axis')
+
+    # Point for portfolio risk and return
+    dpg.configure_item('ptf_scatter',x=[sqrt(td.ptf_variance)],y=td.ptf_return,label='ptf',parent='y_axis')
+
+    # point along efficient line
+    x_value = sqrt(td.ptf_variance) * td.risk_adjuster
+    y_value = td.ptf_rf_slope*x_value + td.risk_free_rate
+    dpg.configure_item('risk_level',x=[x_value],y=[y_value],label='risk level',parent='y_axis')
+
+    # value print updates
+    dpg.configure_item('ptf_ret_text',default_value=f"Return: {(td.ptf_return * td.risk_adjuster) + (td.risk_free_rate * (1-td.risk_adjuster)):.2%}")
+    dpg.configure_item('ptf_var_text',default_value= f"Std. Dev.: {sqrt(td.ptf_variance) * td.risk_adjuster:.2%}")
+
     risk_adjust_calc(None,None)
 
 def calc_weights_button():
@@ -391,7 +411,6 @@ def output_window():
         weight_table_builder()
 
 # ======= show return, variance, other
-
 def portfolio_values_window():
     with dpg.child_window(width=200,height=80,no_scrollbar=True):
         dpg.add_text(f"Portfolio Results:")
