@@ -6,6 +6,7 @@ from matplotlib import pyplot
 from sklearn.linear_model import SGDRegressor
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
+import random
 
 class solver_testing(PtfDaemon):
     def __init__(self, period = '10y', interval = '1mo', risk_free = '^TNX', ohlc = 'Adj Close') -> None:
@@ -37,27 +38,37 @@ class solver_testing(PtfDaemon):
         self.ptf_rf_slope = -999
         self.covariance_matrix = DataFrame()
 
+    def rand_weights(self):
+        weights = DataFrame()
+        rand_weight = [round(random.random(),4) for _ in range(len(self.tickers))]
+        weights['Weights'] = [w / sum(rand_weight) for w in rand_weight]       
+        weights.index = self.tickers
+
+        return weights
+
+    def spit_std_ret(self):
+        weights = self.rand_weights()
+        cov = self.solve_cov_matrix(weights).sum().sum()
+        ret = (self.ticker_return * weights).sum()
+
+        return sqrt(cov), ret
+
     def solve(self):
         weights = DataFrame()
         sgd = make_pipeline(StandardScaler(),SGDRegressor())
         
-        weights['Weights'] = [1/len(self.tickers) for _ in self.tickers]
-        weights.index = self.tickers
-        covariance = self.solve_cov_matrix(weights['Weights']).sum()
-        y = (self.ticker_return.T['Return'] * weights['Weights']).to_list()
-        for t in covariance.index:
-            covariance[t] = sqrt(covariance[t])
-        x = covariance.to_list()
+        x = list()
+        y = list()
 
-        y = array(y).reshape(1,-1)
-        x = array(x).reshape(1,-1)
+        for _ in range(10):
+            out = self.spit_std_ret()
+            x.append(out[0])
+            y.append(out[1])
 
         print(x)
-        print()
         print(y)
-        exit()
 
-        sgd.fit(x,y)
+        exit()
         
 
 if __name__ == '__main__':
