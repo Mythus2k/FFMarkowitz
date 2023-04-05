@@ -298,8 +298,8 @@ class PtfDaemon:
 
         return tracker_all, tracker_used
 
-    def save(self):
-        dump(self,open('./Conf/ptf_Daemon.conf','wb'))
+    def save(self,name='ptf_Daemon'):
+        dump(self,open(f'./Conf/{name}.conf','wb'))
 
 if __name__ == '__main__':
     td = PtfDaemon(risk_free='^IRX')

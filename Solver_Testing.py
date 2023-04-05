@@ -1,9 +1,8 @@
 from Backend import PtfDaemon
-from pandas import DataFrame, concat
-from numpy import array
+from pandas import DataFrame, read_csv
 from math import sqrt
 from matplotlib import pyplot
-from sklearn.linear_model import SGDRegressor, LinearRegression
+from sklearn.linear_model import SGDRegressor
 import random
 
 class solver_testing(PtfDaemon):
@@ -36,31 +35,68 @@ class solver_testing(PtfDaemon):
         self.ptf_rf_slope = -999
         self.covariance_matrix = DataFrame()
 
-    def solve(self):
-        pass
+    def solve_weights(self,ptf_builds=400,plot=False):
+        x = list()
+        y = list()
+        for _ in range(ptf_builds):
+            out = self.build_point()
+            x.append(out[0]) # weights
+            y.append(out[1]) # std. dev.
+
+        reg = SGDRegressor(max_iter=100_000)
+        reg.fit(x,y)
         
+        if plot:
+            train_x = list()
+            for r in x:
+                df = DataFrame({'Weights':r},index=self.tickers)
+                train_x.append((self.ticker_return.T['Return'] * df['Weights']).sum())
 
-def build_point():
-    weights = DataFrame()
-    rand_weight = [round(random.random(),4) for _ in range(len(td.tickers))]
-    weights['Weights'] = [w / sum(rand_weight) for w in rand_weight]
-    weights.index = td.tickers
+            pyplot.scatter(y, train_x)
 
-    var_matr = td.solve_cov_matrix(weights['Weights']).sum()
-    x = [sqrt(_) for _ in var_matr.values]
-    
-    y = (td.ticker_return.T['Return'] * weights['Weights']).sum()
+            df = DataFrame({'Weights':[_/reg.coef_.sum() for _ in reg.coef_]},index=self.tickers)
+            pyplot.scatter(reg.intercept_, (self.ticker_return.T['Return'] * df['Weights']).sum())
+            pyplot.show()
 
-    return x, y
+        return DataFrame({'Weights':[_/reg.coef_.sum() for _ in reg.coef_]},index=self.tickers)
+
+    def build_point(self):
+        weights = DataFrame()
+        rand_weight = [round(random.random(),4) for _ in range(len(self.tickers))]
+        weights['Weights'] = [w / sum(rand_weight) for w in rand_weight]
+        weights.index = self.tickers
+
+        var_matr = self.solve_cov_matrix(weights['Weights']).sum().sum()
+        
+        x = weights['Weights'].to_list()
+        
+        y = sqrt(var_matr)
+
+        return x, y
+
+    def solve(self,ptf_builds=400,plot=False):
+        self.weights = self.solve_weights(ptf_builds,plot)
+        self.ptf_variance = self.solve_cov_matrix(self.weights['Weights']).sum().sum()
+        self.ptf_return = (self.ticker_return.T['Return'] * self.weights['Weights']).sum()
+        self.ptf_rf_slope = (self.risk_free_rate - self.ptf_return) / (0 - sqrt(self.ptf_variance))
+
+    def save(self,name='slv_tst'):
+        return super().save(name)
 
 if __name__ == '__main__':
     td = solver_testing()
 
-    td.add_ticker('xom')
-    td.add_ticker('tsla')
-    td.add_ticker('meta')
-    td.add_ticker('bac')
-    td.add_ticker('wfc')
+    # td.add_ticker('xom')
+    # td.add_ticker('tsla')
+    # td.add_ticker('meta')
+    # td.add_ticker('bac')
+    # td.add_ticker('wfc')
+    # td.add_ticker('v')
+    # td.add_ticker('c')
+
+    spy = read_csv('spy.csv')
+    for tick in spy['Symbol'][:20]:
+        td.add_ticker(tick)  
 
     td.download_data()
 
@@ -68,21 +104,8 @@ if __name__ == '__main__':
     td.calc_beta()
     td.calc_variance()
 
-    x = []
-    y = []
+    td.solve(ptf_builds=400,plot=True)
 
-    for _ in range(500):
-        out = build_point()
-        x.append(out[0])
-        y.append(out[1])
+    print(td)
 
-    reg = LinearRegression()
-    reg.fit(x,y)
-
-    print(reg.coef_)
-    print(reg.intercept_)
-
-    x = array(x)
-    pyplot.scatter([_.sum() for _ in x],y)
-    pyplot.scatter(array(reg.coef_).sum(),reg.intercept_)
-    pyplot.show()
+    td.save()

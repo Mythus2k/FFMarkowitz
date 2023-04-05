@@ -1,10 +1,12 @@
 from Backend import PtfDaemon
+from Solver_Testing import solver_testing
 import dearpygui.dearpygui as dpg
 from pickle import load
 from math import sqrt
 from pandas import DataFrame
 
-td = load(open('./Conf/ptf_Daemon.conf','rb'))
+# td = load(open('./Conf/ptf_Daemon.conf','rb'))
+td = load(open('./Conf/slv_tst.conf','rb'))
 print(td)
 
 dpg.create_context()
