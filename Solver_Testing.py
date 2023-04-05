@@ -48,13 +48,13 @@ class solver_testing(PtfDaemon):
 
     def spit_std_ret(self):
         weights = self.rand_weights()
-        cov = self.solve_cov_matrix(weights).sum().sum()
-        ret = (self.ticker_return * weights).sum()
+        cov = self.solve_cov_matrix(weights['Weights']).sum().sum()
+        ret = (self.ticker_return * weights['Weights']).T['Return'].sum()
 
         return sqrt(cov), ret
 
     def solve(self):
-        weights = DataFrame()
+        # weights = DataFrame()
         sgd = make_pipeline(StandardScaler(),SGDRegressor())
         
         x = list()
@@ -65,10 +65,17 @@ class solver_testing(PtfDaemon):
             x.append(out[0])
             y.append(out[1])
 
-        print(x)
-        print(y)
+        x = array(x).reshape(-1,1)
+        y = array(y).reshape(-1,1)
 
-        exit()
+        sgd.fit(x,y)
+        pred_x = [_/100 for _ in range(100)]
+        pred_x = array(pred_x).reshape(-1,1)
+        pred_y = sgd.predict(pred_x)
+
+        pyplot.plot(pred_x,pred_y)
+        pyplot.scatter(x,y)
+        pyplot.show()
         
 
 if __name__ == '__main__':
