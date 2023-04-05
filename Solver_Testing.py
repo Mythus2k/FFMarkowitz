@@ -3,9 +3,8 @@ from pandas import DataFrame, concat
 from numpy import array
 from math import sqrt
 from matplotlib import pyplot
-from sklearn.linear_model import SGDRegressor
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import SGDRegressor, LinearRegression
+import random
 
 class solver_testing(PtfDaemon):
     def __init__(self, period = '10y', interval = '1mo', risk_free = '^TNX', ohlc = 'Adj Close') -> None:
@@ -38,40 +37,52 @@ class solver_testing(PtfDaemon):
         self.covariance_matrix = DataFrame()
 
     def solve(self):
-        weights = DataFrame()
-        sgd = make_pipeline(StandardScaler(),SGDRegressor())
+        pass
         
-        weights['Weights'] = [1/len(self.tickers) for _ in self.tickers]
-        weights.index = self.tickers
-        covariance = self.solve_cov_matrix(weights['Weights']).sum()
-        y = (self.ticker_return.T['Return'] * weights['Weights']).to_list()
-        for t in covariance.index:
-            covariance[t] = sqrt(covariance[t])
-        x = covariance.to_list()
 
-        y = array(y).reshape(1,-1)
-        x = array(x).reshape(1,-1)
+def build_point():
+    weights = DataFrame()
+    rand_weight = [round(random.random(),4) for _ in range(len(td.tickers))]
+    weights['Weights'] = [w / sum(rand_weight) for w in rand_weight]
+    weights.index = td.tickers
 
-        print(x)
-        print()
-        print(y)
-        exit()
+    var_matr = td.solve_cov_matrix(weights['Weights']).sum()
+    x = [sqrt(_) for _ in var_matr.values]
+    
+    y = (td.ticker_return.T['Return'] * weights['Weights']).sum()
 
-        sgd.fit(x,y)
-        
+    return x, y
 
 if __name__ == '__main__':
     td = solver_testing()
 
-    td.add_ticker('c')
+    td.add_ticker('xom')
+    td.add_ticker('tsla')
+    td.add_ticker('meta')
     td.add_ticker('bac')
     td.add_ticker('wfc')
-    td.add_ticker('pypl')
-    td.add_ticker('v')
 
     td.download_data()
-    td.calc_returns()
-    td.calc_variance()
-    td.calc_beta()
 
-    outs = td.solve()
+    td.calc_returns()
+    td.calc_beta()
+    td.calc_variance()
+
+    x = []
+    y = []
+
+    for _ in range(500):
+        out = build_point()
+        x.append(out[0])
+        y.append(out[1])
+
+    reg = LinearRegression()
+    reg.fit(x,y)
+
+    print(reg.coef_)
+    print(reg.intercept_)
+
+    x = array(x)
+    pyplot.scatter([_.sum() for _ in x],y)
+    pyplot.scatter(array(reg.coef_).sum(),reg.intercept_)
+    pyplot.show()
