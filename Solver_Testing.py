@@ -1,8 +1,9 @@
 from Backend import PtfDaemon
-from pandas import DataFrame, read_csv
+from pandas import DataFrame, read_csv, concat, array
 from math import sqrt
 from matplotlib import pyplot
 from sklearn.linear_model import SGDRegressor
+from scipy.optimize import minimize
 import random
 
 class solver_testing(PtfDaemon):
@@ -35,30 +36,19 @@ class solver_testing(PtfDaemon):
         self.ptf_rf_slope = -999
         self.covariance_matrix = DataFrame()
 
-    def solve_weights(self,ptf_builds=400,plot=False):
-        x = list()
-        y = list()
-        for _ in range(ptf_builds):
-            out = self.build_point()
-            x.append(out[0]) # weights
-            y.append(out[1]) # std. dev.
-
-        reg = SGDRegressor(max_iter=100_000)
-        reg.fit(x,y)
+    def fun(self):
+        # (x[0] - 1) ** 2 + (x[1] - 2.5)**2.
+        x = [self.ticker_return[tick] for tick in self.tickers]
         
-        if plot:
-            train_x = list()
-            for r in x:
-                df = DataFrame({'Weights':r},index=self.tickers)
-                train_x.append((self.ticker_return.T['Return'] * df['Weights']).sum())
+        return array([x[_] * w[_] for _ in range(len(self.tickers))]).sum()
 
-            pyplot.scatter(y, train_x)
+    def solve_weights(self,ptf_builds=400,plot=False):
+        weights = DataFrame()
+        rand_weight = [round(random.random(),4) for _ in range(len(self.tickers))]
+        weights['Weights'] = [w / sum(rand_weight) for w in rand_weight]
+        weights.index = self.tickers
 
-            df = DataFrame({'Weights':[_/reg.coef_.sum() for _ in reg.coef_]},index=self.tickers)
-            pyplot.scatter(reg.intercept_, (self.ticker_return.T['Return'] * df['Weights']).sum())
-            pyplot.show()
-
-        return DataFrame({'Weights':[_/reg.coef_.sum() for _ in reg.coef_]},index=self.tickers)
+        res = minimize(fun, weights['Weights'].to_list())
 
     def build_point(self):
         weights = DataFrame()
@@ -95,7 +85,7 @@ if __name__ == '__main__':
     # td.add_ticker('c')
 
     spy = read_csv('spy.csv')
-    for tick in spy['Symbol'][:20]:
+    for tick in spy['Symbol'][10:15]:
         td.add_ticker(tick)  
 
     td.download_data()
@@ -104,8 +94,5 @@ if __name__ == '__main__':
     td.calc_beta()
     td.calc_variance()
 
-    td.solve(ptf_builds=400,plot=True)
-
+    td.solve(ptf_builds=1,plot=True)
     print(td)
-
-    td.save()
