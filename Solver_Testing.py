@@ -37,14 +37,6 @@ class solver_testing(PtfDaemon):
         self.ptf_rf_slope = -999
         self.covariance_matrix = DataFrame()
 
-    def solve_weights(self):
-        weights = DataFrame()
-        rand_weight = [round(random.random(),4) for _ in range(len(self.tickers))]
-        weights['Weights'] = [w / sum(rand_weight) for w in rand_weight]
-        weights.index = self.tickers
-
-        res = minimize(self.fun, weights['Weights'].to_list())
-
     def build_point(self):
         "returns (weights, ptf_stdDev, ptf_ret)"
         weights = DataFrame()
@@ -59,43 +51,39 @@ class solver_testing(PtfDaemon):
 
         return weights['Weights'].to_list(), sqrt(var_matr), sum(w*r)
 
-    def solve(self):
-        self.weights = self.solve_weights()
-        self.ptf_variance = self.solve_cov_matrix(self.weights['Weights']).sum().sum()
-        self.ptf_return = (self.ticker_return.T['Return'] * self.weights['Weights']).sum()
-        self.ptf_rf_slope = (self.risk_free_rate - self.ptf_return) / (0 - sqrt(self.ptf_variance))
-
     def save(self,name='slv_tst'):
         return super().save(name)
 
-    def return_func(self, params):
+    def ptf_return_f(self, params):
+        "pass an array of weights"
         r = np.array(self.ticker_return.T['Return'].to_list())
-        s = 0.0
-
-        for i in range(len(params)):
-            s += r[i] * params[i]
-
-        return s
+        return sum(r*params)
     
-    def var_func(self,params):
+    def ptf_std_f(self,params):
+        "pass an array of weights"
         covariance_matrix = self.ticker_data.cov()
         covariance_matrix.index = range(len(covariance_matrix))
         covariance_matrix.columns = covariance_matrix.index
 
         out = 0.0
-
         for tick in range(len(params)):
             for tick_ in range(len(params)):
                 out += params[tick] * params[tick_] * covariance_matrix[tick][tick_]
 
         return sqrt(out)
 
+    def minimize_ptf(self):
+        w = [1/len(td.tickers) for _ in td.tickers]
+        cons = ({'type': 'eq', 'fun': lambda x:  1 - sum(x)})
+        res = minimize(td.ptf_std_f, w, bounds=Bounds(lb=0),constraints=cons)
+        
+        return res.x
 
 if __name__ == '__main__':
     td = solver_testing()
 
     spy = read_csv('spy.csv')['Symbol']
-    for tick in spy[:5]:
+    for tick in spy[:10]:
         td.add_ticker(tick)
 
     td.download_data()
@@ -103,24 +91,14 @@ if __name__ == '__main__':
     td.calc_returns()
     td.calc_variance()
 
-    w = [1/len(td.tickers) for _ in td.tickers]
+    res = td.minimize_ptf()
 
-    cons = ({'type': 'eq', 'fun': lambda x:  1 - sum(x)})
-    res = minimize(td.var_func, w, bounds=Bounds(lb=0),constraints=cons)
-    print(res)
+    ticks_x = list()
+    ticks_y = list()
+    for tick in td.tickers:
+        ticks_x.append(sqrt(td.ticker_variance[tick]['Variance']))
+        ticks_y.append(td.ticker_return[tick]['Return'])
 
-    # plot a couple 1000 portfolios
-    ret = array(td.ticker_return.T['Return'].to_list())
-    x = list()
-    y = list()
-    for _ in range(200):
-        point = td.build_point()
-        x.append(point[1])
-        y.append(point[2])
-
-    pyplot.scatter(x,y)
-    weights = DataFrame(res.x)
-    weights.index = td.tickers
-    weights.columns = ['Weights']
-    pyplot.scatter(td.solve_cov_matrix(weights['Weights']).sum().sum(),sum(res.x * array(td.ticker_return.T['Return'].to_list())))
+    pyplot.scatter(ticks_x,ticks_y)
+    pyplot.scatter(td.ptf_std_f(res),td.ptf_return_f(res))
     pyplot.show()
