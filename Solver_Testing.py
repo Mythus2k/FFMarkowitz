@@ -1,9 +1,10 @@
 from Backend import PtfDaemon
 from pandas import DataFrame, read_csv, concat, array
+import numpy as np
 from math import sqrt
 from matplotlib import pyplot
 from sklearn.linear_model import SGDRegressor
-from scipy.optimize import minimize
+from scipy.optimize import minimize, Bounds
 import random
 
 class solver_testing(PtfDaemon):
@@ -36,21 +37,16 @@ class solver_testing(PtfDaemon):
         self.ptf_rf_slope = -999
         self.covariance_matrix = DataFrame()
 
-    def fun(self):
-        # (x[0] - 1) ** 2 + (x[1] - 2.5)**2.
-        x = [self.ticker_return[tick] for tick in self.tickers]
-        
-        return array([x[_] * w[_] for _ in range(len(self.tickers))]).sum()
-
-    def solve_weights(self,ptf_builds=400,plot=False):
+    def solve_weights(self):
         weights = DataFrame()
         rand_weight = [round(random.random(),4) for _ in range(len(self.tickers))]
         weights['Weights'] = [w / sum(rand_weight) for w in rand_weight]
         weights.index = self.tickers
 
-        res = minimize(fun, weights['Weights'].to_list())
+        res = minimize(self.fun, weights['Weights'].to_list())
 
     def build_point(self):
+        "returns (weights, ptf_stdDev, ptf_ret)"
         weights = DataFrame()
         rand_weight = [round(random.random(),4) for _ in range(len(self.tickers))]
         weights['Weights'] = [w / sum(rand_weight) for w in rand_weight]
@@ -58,14 +54,13 @@ class solver_testing(PtfDaemon):
 
         var_matr = self.solve_cov_matrix(weights['Weights']).sum().sum()
         
-        x = weights['Weights'].to_list()
-        
-        y = sqrt(var_matr)
+        w = np.array(weights['Weights'].to_list())
+        r = np.array(self.ticker_return.T['Return'].to_list())
 
-        return x, y
+        return weights['Weights'].to_list(), sqrt(var_matr), sum(w*r)
 
-    def solve(self,ptf_builds=400,plot=False):
-        self.weights = self.solve_weights(ptf_builds,plot)
+    def solve(self):
+        self.weights = self.solve_weights()
         self.ptf_variance = self.solve_cov_matrix(self.weights['Weights']).sum().sum()
         self.ptf_return = (self.ticker_return.T['Return'] * self.weights['Weights']).sum()
         self.ptf_rf_slope = (self.risk_free_rate - self.ptf_return) / (0 - sqrt(self.ptf_variance))
@@ -73,26 +68,61 @@ class solver_testing(PtfDaemon):
     def save(self,name='slv_tst'):
         return super().save(name)
 
+    def return_func(self, params):
+        r = np.array(self.ticker_return.T['Return'].to_list())
+        s = 0.0
+
+        for i in range(len(params)):
+            s += r[i] * params[i]
+
+        return s
+    
+    def var_func(self,params):
+        covariance_matrix = self.ticker_data.cov()
+        covariance_matrix.index = range(len(covariance_matrix))
+        covariance_matrix.columns = covariance_matrix.index
+
+        out = 0.0
+
+        for tick in range(len(params)):
+            for tick_ in range(len(params)):
+                out += params[tick] * params[tick_] * covariance_matrix[tick][tick_]
+
+        return sqrt(out)
+
+
 if __name__ == '__main__':
     td = solver_testing()
 
-    # td.add_ticker('xom')
-    # td.add_ticker('tsla')
-    # td.add_ticker('meta')
-    # td.add_ticker('bac')
-    # td.add_ticker('wfc')
-    # td.add_ticker('v')
-    # td.add_ticker('c')
-
-    spy = read_csv('spy.csv')
-    for tick in spy['Symbol'][10:15]:
-        td.add_ticker(tick)  
+    spy = read_csv('spy.csv')['Symbol']
+    for tick in spy[:5]:
+        td.add_ticker(tick)
 
     td.download_data()
-
-    td.calc_returns()
     td.calc_beta()
+    td.calc_returns()
     td.calc_variance()
 
-    td.solve(ptf_builds=1,plot=True)
-    print(td)
+    w = [1/len(td.tickers) for _ in td.tickers]
+
+    cons = ({'type': 'eq', 'fun': lambda x:  1 - sum(x)})
+    res = minimize(td.var_func, w, bounds=Bounds(lb=0),constraints=cons)
+    print(res)
+
+    print(res.x)
+    print(w)
+
+    # plot a couple 1000 portfolios
+    # ret = array(td.ticker_return.T['Return'].to_list())
+    # x = list()
+    # y = list()
+    # for _ in range(1000):
+    #     point = td.build_point()
+    #     x.append(point[1])
+    #     y.append(point[2])
+
+    # print(len(x))
+    # print(len(y))
+
+    # pyplot.scatter(x,y)
+    # pyplot.show()
