@@ -1,12 +1,10 @@
 from Backend import PtfDaemon
-from Solver_Testing import solver_testing
 import dearpygui.dearpygui as dpg
 from pickle import load
 from math import sqrt
 from pandas import DataFrame
 
 td = load(open('./Conf/ptf_Daemon.conf','rb'))
-# td = load(open('./Conf/slv_tst.conf','rb'))
 print(td)
 
 dpg.create_context()
@@ -203,7 +201,7 @@ def individual_calc_controller(sender, app_data):
             dpg.configure_item(f"{tick}-std",default_value=f"{sqrt(td.ticker_variance[tick]['Variance']):.2%}")
 
     if sender == 'optimizer_button':
-        td.solve()
+        td.solve(runs=len(td.tickers)*20,weight_adjust=99)
         # may need to add some other stuff once optimized solutions are added
 
 def individual_calcs():
@@ -279,7 +277,7 @@ def efficient_line():
     x_axis = list()
     y_axis = list()
 
-    for x in [0,(sqrt(td.ptf_variance)*2)]:
+    for x in [0,(td.ptf_std*2)]:
         x_axis.append(x)
     for x in iter(x_axis):
         y_axis.append(td.ptf_rf_slope*x + td.risk_free_rate)
@@ -292,17 +290,20 @@ def graph_window():
         dpg.add_plot_axis(dpg.mvYAxis, label="Expected Return", tag="y_axis")
 
         # Scatter of all positions
-        dpg.add_scatter_series(x=[sqrt(_) for _ in td.ticker_variance.T['Variance']],y=td.ticker_return.T['Return'].to_list(),label='tickers',parent='y_axis',tag='ticker_scatter')
+        dpg.add_scatter_series(x=[sqrt(_) for _ in td.ticker_variance.T['Variance']],
+                               y=td.ticker_return.T['Return'].to_list(),
+                               label='tickers',parent='y_axis',
+                               tag='ticker_scatter')
         
         # Point for portfolio risk and return
-        dpg.add_scatter_series(x=[sqrt(td.ptf_variance)],y=td.ptf_return,label='ptf',parent='y_axis',tag='ptf_scatter')
+        dpg.add_scatter_series(x=[td.ptf_std],y=td.ptf_return,label='ptf',parent='y_axis',tag='ptf_scatter')
 
         # efficient line
         x_series, y_series = efficient_line()
         dpg.add_line_series(x=x_series,y=y_series,label='efficient',parent='y_axis',tag='efficient_line')
 
         # point along efficient line
-        x_value = sqrt(td.ptf_variance) * td.risk_adjuster
+        x_value = td.ptf_std * td.risk_adjuster
         y_value = td.ptf_rf_slope*x_value + td.risk_free_rate
         dpg.add_scatter_series(x=[x_value],y=[y_value],label='risk level',parent='y_axis',tag='risk_level')
 
@@ -319,14 +320,13 @@ def risk_adjust_calc(sender, app_data):
         td.risk_adjuster = app_data/100
         
         # graph updates
-        x_value = sqrt(td.ptf_variance) * td.risk_adjuster
+        x_value = td.ptf_std * td.risk_adjuster
         y_value = td.ptf_rf_slope*x_value + td.risk_free_rate
         dpg.configure_item('risk_level',x = [x_value],y = [y_value])
 
         # value print updates
         dpg.configure_item('ptf_ret_text',default_value=f"Return: {(td.ptf_return * td.risk_adjuster) + (td.risk_free_rate * (1-td.risk_adjuster)):.2%}")
-        dpg.configure_item('ptf_var_text',default_value= f"Std. Dev.: {sqrt(td.ptf_variance) * td.risk_adjuster:.2%}")
-
+        dpg.configure_item('ptf_var_text',default_value= f"Std. Dev.: {td.ptf_std * td.risk_adjuster:.2%}")
 
     # collect data
     used_weights = td.weights['Weights']
@@ -337,7 +337,6 @@ def risk_adjust_calc(sender, app_data):
     used_weights.T['Trsry'] = 1 - risk_free
 
     used_weights = used_weights.sort_values(ascending=False)
-    # print(used_weights)
 
     for tick in used_weights.index:
         dpg.delete_item(f'{tick}-weight_row')
@@ -369,23 +368,23 @@ def calc_weights_controller():
 
     dpg.configure_item('ticker_scatter',x=[sqrt(_) for _ in td.ticker_variance.T['Variance']],y=td.ticker_return.T['Return'].to_list())
 
-    td.solve()
+    td.solve(runs=len(td.tickers)*20,weight_adjust=99)
 
     # efficient line
     x_series, y_series = efficient_line()
     dpg.configure_item('efficient_line',x=x_series,y=y_series,label='efficient',parent='y_axis')
 
     # Point for portfolio risk and return
-    dpg.configure_item('ptf_scatter',x=[sqrt(td.ptf_variance)],y=td.ptf_return,label='ptf',parent='y_axis')
+    dpg.configure_item('ptf_scatter',x=[td.ptf_std],y=td.ptf_return,label='ptf',parent='y_axis')
 
     # point along efficient line
-    x_value = sqrt(td.ptf_variance) * td.risk_adjuster
+    x_value = td.ptf_std * td.risk_adjuster
     y_value = td.ptf_rf_slope*x_value + td.risk_free_rate
     dpg.configure_item('risk_level',x=[x_value],y=[y_value],label='risk level',parent='y_axis')
 
     # value print updates
     dpg.configure_item('ptf_ret_text',default_value=f"Return: {(td.ptf_return * td.risk_adjuster) + (td.risk_free_rate * (1-td.risk_adjuster)):.2%}")
-    dpg.configure_item('ptf_var_text',default_value= f"Std. Dev.: {sqrt(td.ptf_variance) * td.risk_adjuster:.2%}")
+    dpg.configure_item('ptf_var_text',default_value= f"Std. Dev.: {td.ptf_std * td.risk_adjuster:.2%}")
 
     risk_adjust_calc(None,None)
 
@@ -404,10 +403,21 @@ def weight_table_builder():
 
         risk_adjust_calc(None,None)
 
+def update_min_weight(sender, app_data):
+    td.minium_weight = app_data/100
+
+def minimum_weight_selector():
+    with dpg.group(horizontal=True):
+        dpg.add_text(f"Min Weight:")
+        dpg.add_input_float(default_value=td.minimum_weight*100,callback=update_min_weight,
+                            width=120, step= 1, step_fast=5)
+
 def output_window():
     with dpg.group():
         with dpg.group(horizontal=False):
-            desired_return_slider()
+            with dpg.group(horizontal=False):
+                desired_return_slider()
+                minimum_weight_selector()
             calc_weights_button()
 
         weight_table_builder()
@@ -418,28 +428,15 @@ def portfolio_values_window():
         dpg.add_text(f"Portfolio Results:")
         dpg.add_text(default_value= f"Return: {(td.ptf_return * td.risk_adjuster) + (td.risk_free_rate * (1-td.risk_adjuster)):.2%}",
                      tag='ptf_ret_text')
-        dpg.add_text(default_value= f"Std. Dev.: {sqrt(td.ptf_variance) * td.risk_adjuster:.2%}",
+        dpg.add_text(default_value= f"Std. Dev.: {td.ptf_std * td.risk_adjuster:.2%}",
                      tag='ptf_var_text')
 
 # ======== Other Gui elements to run
 # create viewport
-dpg.create_viewport(title='Optimal Portfolio Solver', width=720, height=650,
-                    #small_icon=None,large_icon=None,
-                    # clear_color=[255,255,255,0],
-                    )
+dpg.create_viewport(title='Optimal Portfolio Solver', width=720, height=600,
+                    small_icon='Conf\logo.ico',large_icon='Conf\logo.ico')
 
 # ======== Create window to display
-
-#   Windows:
-    # output_window
-    # graph_window
-    # calculation_window    
-    # ticker_table_window   
-    # add_ticker_window     
-    # treasury_window       
-    # index_window          
-    # inputs_window         
-
 with dpg.window(tag='Primary Window'):
     with dpg.group(horizontal=True):
         with dpg.group():
@@ -447,7 +444,6 @@ with dpg.window(tag='Primary Window'):
             treasury_window()
             index_window()
             portfolio_values_window()
-            # calculation_window()  # Kinda useless
         with dpg.group():
             add_ticker_window()
             ticker_table_window()

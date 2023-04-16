@@ -40,9 +40,10 @@ class PtfDaemon:
         # solver params
         self.weights = DataFrame()
         self.ptf_return = float()
-        self.ptf_variance = float()
+        self.ptf_std = float()
         self.ptf_rf_slope = -999
         self.covariance_matrix = DataFrame()
+        self.minimum_weight = .01
 
         print(f'TickerDaemon ready')
 
@@ -56,7 +57,7 @@ class PtfDaemon:
         string += f"risk free rate: {self.risk_free_rate:.2%}\n"
         string += f"Desired return adjuster: {self.risk_adjuster/100:.2%}\n"
         string += f"ptf return: {self.ptf_return:.2%}\n"
-        string += f"ptf std: {sqrt(self.ptf_variance):.2%}\n"
+        string += f"ptf std: {self.ptf_std:.2%}\n"
         string += f"ptf weights (as decimal): \n{self.weights.T}\n"
         string += f"tickers (as decimal): \n{concat([self.ticker_beta,self.ticker_return,self.ticker_variance])}\n"
         string += f"====================== End Info ======================\n"
@@ -199,100 +200,111 @@ class PtfDaemon:
 
         return covariance_matrix
 
-    def weights_updater(self,weight_frame,covariance_matrix,update_range=5):
+    def normalize_weight_min(self,w):
+        w = [round(_/sum(w),6) for _ in w]
+
+        for i in range(len(w)):
+            if w[i] < self.minimum_weight:
+                diff = self.minimum_weight - w[i]
+                w[i] = round(w[i] + diff,6)
+
+        w = [round(_/sum(w),6) for _ in w]
+
+        return w
+
+    def weights_updater(self,weight_frame,update_range=5):
         # set up data
-        weight_update = weight_frame['Weights']
-        covariance_matrix = covariance_matrix.sum().sort_values()        
-        
-        # randomize the matrix
-        covariance_matrix = covariance_matrix.sample(len(covariance_matrix))
-        
-        # Create a dataframe to to use to make updating decisions
-        df = concat((covariance_matrix,weight_update),axis=1)
-        df.columns = ['Covar','Weights']
-        df['Index'] = [_ for _ in range(len(df))]
+        df = weight_frame
 
         # randomly decrease bottom half, randomly increase top half
         weights = df['Weights'].to_dict()
         for tick in weights.keys():
-            if df['Index'][tick] < len(df)/2:
+            option = random.randint(1,3)
+            if option == 1:
                 weights[tick] = weights[tick] * (random.randrange(100-update_range,100)/100)
-                # Testing
-                # weights[tick] = weights[tick] * (random.randrange(1,20)/100)
-            else:
+            elif option == 2:
                 weights[tick] = weights[tick] * (random.randrange(100,100+update_range)/100)
-                # Testing
-                # weights[tick] = weights[tick] * (random.randrange(170,199)/100)
+                if weights[tick] < self.minimum_weight:
+                    diff = self.minimum_weight - weights[tick]
+                    weights[tick] += diff
         
-        df['Weights'] = weights.values()
+        # normalize min weights (4 passes)
+        w = list(weights.values())
+        for _ in range(4):
+            w = self.normalize_weight_min(w)
 
-        # Normalize weights to sum to 100
-        df['Weights'] = [w / df['Weights'].sum() for w in df['Weights']]
-        
+        df['Weights'] = w
+
         # return only the weights as a DataFrame
         return df['Weights']
 
     def solve(self,runs=100,weight_adjust=99):
-        # Function variables
-        weights = DataFrame()
-        ptf_variance = 999
-        ptf_return = 0
-        ptf_rf_slope = 0
-
         # set up weights
+        weights = DataFrame()
         weights['Weights'] = self.minimize_ptf()
         weights.index = self.tickers
+
+        # Function variables
+        ptf_std = 999
+        ptf_return = 0
+        ptf_rf_slope = ((self.ptf_return_f(weights['Weights'].to_list()) - self.risk_free_rate)/(self.ptf_std_f(weights['Weights'].to_list()) - 0)) - self.risk_free_rate
         
         # checks tracker
-        tracker_all = {'ret':list(),'var':list()}
+        tracker_all = {'ret':list(),'std':list()}
         tracker_used = {'ret':[self.ptf_return_f(weights['Weights'].to_list())],
-                        'var':[self.ptf_std_f(weights['Weights'].to_list())**2]}
+                        'std':[self.ptf_std_f(weights['Weights'].to_list())]}
 
         for _ in range(runs):
-            # solve covariance matrix
-            covariance_matrix = self.solve_cov_matrix(weights['Weights'])
-
             # update weights
-            weight_update = self.weights_updater(weights,covariance_matrix,weight_adjust)
+            weight_update = self.weights_updater(weights,weight_adjust)
             
             # Get new values
             new_ret = self.ptf_return_f(weight_update.to_list())
             new_std = self.ptf_std_f(weight_update.to_list())
 
             # rf_slope_check
-            slope = ((self.risk_free_rate - new_ret)/(0 - new_std)) - self.risk_free_rate
+            slope = ((new_ret - self.risk_free_rate)/(new_std - 0)) - self.risk_free_rate
             slope_check = slope > ptf_rf_slope            
 
             # update outputs if improvement over previous position
-            # if ret_check or var_check:
             if slope_check:
                 weights['Weights'] = weight_update
-                ptf_return = (self.ticker_return.T['Return'] * weights['Weights']).sum()
-                ptf_variance = covariance_matrix.sum().sum()
-                ptf_rf_slope = (self.risk_free_rate - ptf_return) / (0 - sqrt(ptf_variance))
+                ptf_return = self.ptf_return_f(weights['Weights'].to_list())
+                ptf_std = self.ptf_std_f(weights['Weights'].to_list())
+                ptf_rf_slope = (ptf_return - self.risk_free_rate)/(ptf_std) - self.risk_free_rate
                 
                 # update the used list for plotting
                 tracker_used['ret'].append(ptf_return)
-                tracker_used['var'].append(ptf_variance)
+                tracker_used['std'].append(ptf_std)
+                if True:
+                    print(f"run: {_}/{runs}")
+                    print(f"updates: {len(tracker_used['ret'])}")
+                    print(f"new slope: {ptf_rf_slope}")
+                    print(f"ptf return: {ptf_return:.2%}")
+                    print(f"ptf std: {ptf_std:.2%}")
+                    print(f"ptf weights (top 10):")
+                    print((weights['Weights']*100).sort_values(ascending=False).head(10))
+                    print(f"===== End new slope =====\n")
 
             # track all tested
-            tracker_all['ret'].append((self.ticker_return.T['Return'] * weights['Weights']).sum())
-            tracker_all['var'].append(covariance_matrix.sum().sum())
+            tracker_all['ret'].append(self.ptf_return_f(weight_update.to_list()))
+            tracker_all['std'].append(self.ptf_std_f(weight_update.to_list()))
 
             # intermitten checking
-            if _ % int(runs/10)-1 == 0:
+            if _ % int(runs/10)-1 == 0 and False:
                 print(f"run {_}/{runs}")
+                print(f"updates: {len(tracker_used['ret'])}")
                 print(f"old slope: {ptf_rf_slope:.5}")
                 print(f"new slope: {slope:.5}")
                 print(f"slope_check result: {slope_check}")
                 print(f"ptf return: {ptf_return:.2%}")
-                print(f"ptf std: {sqrt(ptf_variance):.2%}")
+                print(f"ptf std: {ptf_std:.2%}")
                 print(f"ptf weights (top 10):")
                 print((weights['Weights']*100).sort_values(ascending=False).head(10))
                 print(f"===== End Check =====\n")
 
         self.weights = weights
-        self.ptf_variance = ptf_variance
+        self.ptf_std = ptf_std
         self.ptf_return = ptf_return
         self.ptf_rf_slope = ptf_rf_slope
 
@@ -320,10 +332,11 @@ class PtfDaemon:
         return sqrt(out)
 
     def minimize_ptf(self):
-        w = [1/len(td.tickers) for _ in td.tickers]
-        cons = ({'type': 'eq', 'fun': lambda x:  1 - sum(x)})
-        res = minimize(td.ptf_std_f, w, bounds=Bounds(lb=0),constraints=cons)
-        
+        w = [1/len(self.tickers) for _ in self.tickers]
+        cons = ({'type': 'eq', 'fun': lambda x:  1 - sum(x)},
+                {'type': 'ineq', 'fun': lambda x:  x - self.minimum_weight})
+        res = minimize(self.ptf_std_f, w, bounds=Bounds(lb=0),constraints=cons)
+
         return res.x
 
 if __name__ == '__main__':
@@ -358,7 +371,7 @@ if __name__ == '__main__':
     
     # spy test - working - some assets give really weird results, might not have full history
     spy = read_csv('spy.csv')
-    for tick in spy['Symbol'][:10]:
+    for tick in spy['Symbol'][:20]:
         td.add_ticker(tick)    
 
     td.download_data()
@@ -366,12 +379,12 @@ if __name__ == '__main__':
     td.calc_variance()
     td.calc_beta()
 
-    tracker_all, tracker_used = td.solve(runs=200,weight_adjust=99)
+    tracker_all, tracker_used = td.solve(runs=len(td.tickers)*20,weight_adjust=99)
 
     # data outputs
     print('========================  Output  ==========================')
     print(f"ptf return: {td.ptf_return:.2%}")
-    print(f"ptf std: {sqrt(td.ptf_variance):.2%}")
+    print(f"ptf std: {td.ptf_std:.2%}")
     print(f"RF slope: {td.ptf_rf_slope:.5}")
     print(f"total updates: {len(tracker_used['ret'])}")
     print(f"Niave: {td.ticker_return.T.mean()['Return']:.2%}")
@@ -385,19 +398,18 @@ if __name__ == '__main__':
         y.append(td.ticker_return[_])
 
     # used ptf values (improvements)
-    pyplot.scatter([sqrt(_) for _ in tracker_all['var']],tracker_all['ret'],marker='x',color='red')
+    pyplot.scatter([_ for _ in tracker_all['std']],tracker_all['ret'],marker='x',color='red')
     # line following changes
-    pyplot.plot([sqrt(_) for _ in tracker_used['var']],tracker_used['ret'])
+    pyplot.plot([_ for _ in tracker_used['std']],tracker_used['ret'])
+
     # plot individual stocks
     pyplot.scatter(x,y)
     # plot ptf final
-    pyplot.scatter(sqrt(td.ptf_variance),td.ptf_return)
+    pyplot.scatter(td.ptf_std,td.ptf_return)
     # risk free line
-    pyplot.plot([0,sqrt(td.ptf_variance)],[td.risk_free_rate,td.ptf_return])
+    pyplot.plot([0,td.ptf_std],[td.risk_free_rate,td.ptf_return])
 
     w = td.minimize_ptf()
-    print(td.ptf_std_f(w))
-    print(td.ptf_return_f(w))
     pyplot.scatter(td.ptf_std_f(w),td.ptf_return_f(w),c='green',marker='^')
     pyplot.show()
 
