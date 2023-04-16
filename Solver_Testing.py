@@ -109,20 +109,18 @@ if __name__ == '__main__':
     res = minimize(td.var_func, w, bounds=Bounds(lb=0),constraints=cons)
     print(res)
 
-    print(res.x)
-    print(w)
-
     # plot a couple 1000 portfolios
-    # ret = array(td.ticker_return.T['Return'].to_list())
-    # x = list()
-    # y = list()
-    # for _ in range(1000):
-    #     point = td.build_point()
-    #     x.append(point[1])
-    #     y.append(point[2])
+    ret = array(td.ticker_return.T['Return'].to_list())
+    x = list()
+    y = list()
+    for _ in range(200):
+        point = td.build_point()
+        x.append(point[1])
+        y.append(point[2])
 
-    # print(len(x))
-    # print(len(y))
-
-    # pyplot.scatter(x,y)
-    # pyplot.show()
+    pyplot.scatter(x,y)
+    weights = DataFrame(res.x)
+    weights.index = td.tickers
+    weights.columns = ['Weights']
+    pyplot.scatter(td.solve_cov_matrix(weights['Weights']).sum().sum(),sum(res.x * array(td.ticker_return.T['Return'].to_list())))
+    pyplot.show()
