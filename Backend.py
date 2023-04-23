@@ -162,7 +162,6 @@ class PtfDaemon:
         print(self.ticker_variance)
 
     def calc_beta(self):
-        # beta = LinearRegression().fit(bdata[['x']],bdata[['y']]).coef_[0][0]
         out = DataFrame()
         x = array(self.index_data.to_list()).reshape([-1,1])
 
